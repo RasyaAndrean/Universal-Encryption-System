@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Encryption System - Documentation</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+        }
+        .card h3 {
+            color: #667eea;
+            margin-top: 0;
+        }
+        .btn {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 5px;
+            transition: background 0.3s ease;
+        }
+        .btn:hover {
+            background: #764ba2;
+        }
+        .quick-links {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 2rem 0;
+        }
+        code {
+            background: #f1f3f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 1rem 0;
+        }
+        .tech-tag {
+            background: #e9ecef;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔒 Universal Encryption System</h1>
+        <p>Advanced file encryption with Rust - Password-based encryption, digital signatures, and hardware binding</p>
+        <div class="tech-stack">
+            <span class="tech-tag">Rust</span>
+            <span class="tech-tag">Argon2</span>
+            <span class="tech-tag">AES-256-GCM</span>
+            <span class="tech-tag">Ed25519</span>
+            <span class="tech-tag">SHA-256</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h3>🚀 Quick Start</h3>
+            <p>Get up and running in 5 minutes with our comprehensive quick start guide.</p>
+            <a href="QUICK_START.html" class="btn">Quick Start Guide</a>
+        </div>
+
+        <div class="card">
+            <h3>🔧 Installation</h3>
+            <p>Detailed installation instructions for all platforms including Windows, macOS, and Linux.</p>
+            <a href="INSTALLATION.html" class="btn">Installation Guide</a>
+        </div>
+
+        <div class="card">
+            <h3>🛡 Security</h3>
+            <p>Comprehensive security documentation including threat models and cryptographic details.</p>
+            <a href="SECURITY.html" class="btn">Security Docs</a>
+        </div>
+
+        <div class="card">
+            <h3>🏗 Architecture</h3>
+            <p>Technical architecture overview and system design documentation.</p>
+            <a href="ARCHITECTURE.html" class="btn">Architecture</a>
+        </div>
+
+        <div class="card">
+            <h3>🛠 API Reference</h3>
+            <p>Complete API documentation for developers integrating the library.</p>
+            <a href="API.html" class="btn">API Docs</a>
+        </div>
+
+        <div class="card">
+            <h3>⚡ Advanced Usage</h3>
+            <p>Professional usage scenarios, automation, and enterprise deployment.</p>
+            <a href="ADVANCED_USAGE.html" class="btn">Advanced Guide</a>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <h2>📚 Documentation Index</h2>
+        <p>Browse all documentation files:</p>
+        <a href="README.html" class="btn">Main Documentation</a>
+        <a href="TROUBLESHOOTING.html" class="btn">Troubleshooting</a>
+    </div>
+
+    <div class="card">
+        <h3>📦 Project Links</h3>
+        <p>
+            <a href="https://github.com/RasyaAndrean/Universal-Encryption-System" class="btn">GitHub Repository</a>
+            <a href="https://github.com/RasyaAndrean/Universal-Encryption-System/issues" class="btn">Report Issues</a>
+            <a href="https://github.com/RasyaAndrean/Universal-Encryption-System/blob/master/LICENSE" class="btn">License</a>
+        </p>
+    </div>
+
+    <footer style="text-align: center; margin-top: 2rem; padding: 1rem; color: #666;">
+        <p>Universal Encryption System &copy; 2024 Rasya Andrean | MIT License</p>
+    </footer>
+</body>
+</html>
