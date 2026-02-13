@@ -1,0 +1,57 @@
+# Compiled files
+target/
+**/*.rs.bk
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Cargo
+Cargo.lock
+**/target/
+
+# Debug files
+*.d
+*.pdb
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Security files (don't commit private keys)
+*.private.json
+*private_key*
+*secret*
+
+# Test files
+*.test
+test_*
+*_test.rs
+
+# Documentation build
+docs/
+doc/
