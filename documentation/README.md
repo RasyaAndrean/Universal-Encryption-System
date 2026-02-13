@@ -1,5 +1,10 @@
 # File Encryptor - Comprehensive Documentation Index
 
+[![Documentation](https://img.shields.io/badge/docs-75KB-blue)](#)
+[![Guides](https://img.shields.io/badge/guides-8-brightgreen)](#)
+[![Coverage](https://img.shields.io/badge/coverage-complete-orange)](#)
+[![Status](https://img.shields.io/badge/status-up_to_date-brightgreen)](#)
+
 ## 📚 Documentation Overview
 
 This comprehensive documentation suite provides everything you need to understand, install, use, and maintain the File Encryptor system. Whether you're a beginner or advanced user, you'll find the information you need here.

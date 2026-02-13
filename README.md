@@ -1,32 +1,37 @@
 # File Encryptor - Universal Encryption System
 
+[![Rust](https://img.shields.io/badge/Rust-1.70+-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/RasyaAndrean/Universal-Encryption-System)
+[![Security](https://img.shields.io/badge/security-AES--256--GCM-blue)](SECURITY.md)
+[![Platform](https://img.shields.io/badge/platform-Cross--platform-lightgrey)](#)
+
 A comprehensive file encryption system built in Rust with advanced security features including password-based encryption, digital signatures, anti-tamper verification, and hardware binding.
 
 ## 🛠 Technology Stack
 
 ### 🦀 Core Technologies
-- **Language**: [Rust](https://www.rust-lang.org/) - Memory-safe systems programming
-- **Build System**: [Cargo](https://doc.rust-lang.org/cargo/) - Rust package manager and build tool
-- **Version**: Rust 1.70+
+[![Rust](https://img.shields.io/badge/Rust-1.70+-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Cargo](https://img.shields.io/badge/Cargo-package_manager-orange?logo=rust&logoColor=white)](https://doc.rust-lang.org/cargo/)
 
 ### 🔐 Cryptographic Libraries
-- **[Argon2](https://github.com/RustCrypto/password-hashes)** - Password hashing and key derivation
-- **[AES-GCM](https://github.com/RustCrypto/AEADs)** - Authenticated encryption
-- **[Ed25519](https://github.com/dalek-cryptography/ed25519-dalek)** - Digital signatures
-- **[SHA-2](https://github.com/RustCrypto/hashes)** - Cryptographic hashing
-- **[Zeroize](https://github.com/RustCrypto/utils)** - Secure memory clearing
+[![Argon2](https://img.shields.io/badge/Argon2-password_hashing-blue)](https://github.com/RustCrypto/password-hashes)
+[![AES-GCM](https://img.shields.io/badge/AES--GCM-authenticated_encryption-blue)](https://github.com/RustCrypto/AEADs)
+[![Ed25519](https://img.shields.io/badge/Ed25519-digital_signatures-blue)](https://github.com/dalek-cryptography/ed25519-dalek)
+[![SHA-2](https://img.shields.io/badge/SHA--2-hashing-blue)](https://github.com/RustCrypto/hashes)
+[![Zeroize](https://img.shields.io/badge/Zeroize-memory_security-blue)](https://github.com/RustCrypto/utils)
 
 ### 🖥 System Integration
-- **[SysInfo](https://github.com/GuillaumeGomez/sysinfo)** - Hardware and system information
-- **[UUID](https://github.com/uuid-rs/uuid)** - Universally unique identifiers
-- **[Clap](https://github.com/clap-rs/clap)** - Command-line argument parsing
-- **[Serde](https://github.com/serde-rs/serde)** - Serialization framework
-- **[Tokio](https://github.com/tokio-rs/tokio)** - Async runtime
+[![SysInfo](https://img.shields.io/badge/SysInfo-system_info-green)](https://github.com/GuillaumeGomez/sysinfo)
+[![UUID](https://img.shields.io/badge/UUID-unique_identifiers-green)](https://github.com/uuid-rs/uuid)
+[![Clap](https://img.shields.io/badge/Clap-CLI_parsing-green)](https://github.com/clap-rs/clap)
+[![Serde](https://img.shields.io/badge/Serde-serialization-green)](https://github.com/serde-rs/serde)
+[![Tokio](https://img.shields.io/badge/Tokio-async_runtime-green)](https://github.com/tokio-rs/tokio)
 
 ### 🧪 Development Tools
-- **[Thiserror](https://github.com/dtolnay/thiserror)** - Error handling macros
-- **[Anyhow](https://github.com/dtolnay/anyhow)** - Flexible error handling
-- **[Tempfile](https://github.com/Stebalien/tempfile)** - Temporary file management
+[![Thiserror](https://img.shields.io/badge/Thiserror-error_handling-purple)](https://github.com/dtolnay/thiserror)
+[![Anyhow](https://img.shields.io/badge/Anyhow-flexible_errors-purple)](https://github.com/dtolnay/anyhow)
+[![Tempfile](https://img.shields.io/badge/Tempfile-temp_files-purple)](https://github.com/Stebalien/tempfile)
 
 ## Features
 
