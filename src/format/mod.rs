@@ -130,9 +130,13 @@ impl EncryptedFile {
             None
         };
         
-        // Encrypt data
+        // Encrypt data: prefix header with its length (4 bytes LE) so we can
+        // split header from file content reliably during decryption.
         let header_json = serde_json::to_vec(&header)?;
-        let mut data_to_encrypt = header_json;
+        let header_len = (header_json.len() as u32).to_le_bytes();
+        let mut data_to_encrypt = Vec::with_capacity(4 + header_json.len() + plaintext.len());
+        data_to_encrypt.extend_from_slice(&header_len);
+        data_to_encrypt.extend_from_slice(&header_json);
         data_to_encrypt.extend_from_slice(&plaintext);
         
         let encrypted_data = encrypt_data(&data_to_encrypt, password, device_id)?;
@@ -184,13 +188,18 @@ impl EncryptedFile {
         // Decrypt data
         let decrypted_data = decrypt_data(&file_structure.encrypted_data, password, device_id)?;
         
-        // Parse header from decrypted data
-        let header_size = serde_json::from_slice::<EncryptedFileHeader>(&decrypted_data)
-            .map_err(|_| FileFormatError::InvalidFormat)?
-            .metadata
-            .file_size as usize + 1000; // Approximate header size
-        
-        let (header_bytes, file_content) = decrypted_data.split_at(header_size);
+        // Parse header from decrypted data using length prefix
+        if decrypted_data.len() < 4 {
+            return Err(FileFormatError::InvalidFormat);
+        }
+        let header_len = u32::from_le_bytes(
+            decrypted_data[..4].try_into().map_err(|_| FileFormatError::InvalidFormat)?
+        ) as usize;
+        if decrypted_data.len() < 4 + header_len {
+            return Err(FileFormatError::InvalidFormat);
+        }
+        let header_bytes = &decrypted_data[4..4 + header_len];
+        let file_content = &decrypted_data[4 + header_len..];
         let decrypted_header: EncryptedFileHeader = serde_json::from_slice(header_bytes)?;
         
         // Verify data integrity

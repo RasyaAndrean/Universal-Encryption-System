@@ -34,12 +34,14 @@ pub fn derive_key_from_password(
     device_id: Option<&str>,
 ) -> Result<DerivedKey, KeyDerivationError> {
     // Combine password with device ID if provided
+    // Use length-prefixed concatenation to avoid collision between
+    // password "a:b" + device "c" vs password "a" + device "b:c"
     let combined_input = if let Some(device_id) = device_id {
-        format!("{}:{}", password, device_id)
+        format!("{}:{}:{}", password.len(), password, device_id)
     } else {
         password.to_string()
     };
-    
+
     // Generate random salt
     let salt = SaltString::generate(&mut OsRng);
     let salt_bytes: [u8; 16] = salt.as_bytes()[..16].try_into()
@@ -76,11 +78,11 @@ pub fn derive_key_with_salt(
     device_id: Option<&str>,
 ) -> Result<[u8; 32], KeyDerivationError> {
     let combined_input = if let Some(device_id) = device_id {
-        format!("{}:{}", password, device_id)
+        format!("{}:{}:{}", password.len(), password, device_id)
     } else {
         password.to_string()
     };
-    
+
     let salt_string = SaltString::b64_encode(salt)
         .map_err(|e| KeyDerivationError::InvalidParams(e.to_string()))?;
     

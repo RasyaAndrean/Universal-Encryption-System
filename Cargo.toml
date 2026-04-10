@@ -2,7 +2,7 @@
 name = "file-encryptor"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["RasyaAndrean"]
 description = "Universal file encryption system with advanced security features"
 license = "MIT"
 
@@ -24,7 +24,7 @@ hex = "0.4"
 
 # System information
 sysinfo = "0.29"
-uuid = { version = "1.4", features = ["v4"] }
+# uuid no longer needed - device fingerprint uses deterministic SHA-256 hash
 
 # Error handling
 thiserror = "1.0"

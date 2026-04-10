@@ -1,6 +1,5 @@
-use sysinfo::{System, CpuExt, SystemExt};
-use uuid::Uuid;
-use std::net::{TcpStream, IpAddr};
+use sysinfo::{System, CpuExt, DiskExt, NetworkExt, SystemExt};
+use sha2::{Sha256, Digest};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, thiserror::Error)]
@@ -18,61 +17,91 @@ pub struct DeviceFingerprint {
     pub cpu_id: String,
     pub hostname: String,
     pub os_name: String,
-    pub boot_time: u64,
-    pub uuid: String,
+    pub machine_id: String,
 }
 
 impl DeviceFingerprint {
     pub fn new() -> Result<Self, HardwareError> {
         let mut system = System::new_all();
         system.refresh_all();
-        
+
         let cpu_id = system
             .cpus()
             .first()
             .map(|cpu| cpu.vendor_id().to_string())
             .ok_or_else(|| HardwareError::SystemInfo("No CPU found".to_string()))?;
-        
+
         let hostname = system
             .host_name()
             .ok_or_else(|| HardwareError::SystemInfo("Hostname not available".to_string()))?;
-        
+
         let os_name = system
             .long_os_version()
             .ok_or_else(|| HardwareError::SystemInfo("OS version not available".to_string()))?;
-        
-        let boot_time = system.boot_time();
-        
-        let uuid = Uuid::new_v4().to_string();
-        
+
+        // Use a deterministic machine identifier instead of random UUID.
+        // Combine stable hardware attributes into a SHA-256 hash so the
+        // fingerprint is reproducible across calls on the same machine.
+        let machine_id = Self::compute_machine_id(&cpu_id, &hostname, &system)?;
+
         Ok(DeviceFingerprint {
             cpu_id,
             hostname,
             os_name,
-            boot_time,
-            uuid,
+            machine_id,
         })
     }
-    
+
+    /// Builds a deterministic machine identifier from stable hardware properties.
+    fn compute_machine_id(cpu_id: &str, hostname: &str, system: &System) -> Result<String, HardwareError> {
+        let mut hasher = Sha256::new();
+        hasher.update(cpu_id.as_bytes());
+        hasher.update(hostname.as_bytes());
+
+        // Include total memory as a stable hardware trait
+        let total_mem = system.total_memory();
+        hasher.update(total_mem.to_le_bytes());
+
+        // Include number of CPUs
+        let cpu_count = system.cpus().len() as u64;
+        hasher.update(cpu_count.to_le_bytes());
+
+        // Include MAC addresses for additional uniqueness
+        let networks = system.networks();
+        let mut macs: Vec<String> = Vec::new();
+        for (_name, data) in networks {
+            let mac = data.mac_address().to_string();
+            if mac != "00:00:00:00:00:00" && !mac.is_empty() {
+                macs.push(mac);
+            }
+        }
+        macs.sort(); // deterministic order
+        for mac in &macs {
+            hasher.update(mac.as_bytes());
+        }
+
+        let result = hasher.finalize();
+        Ok(hex::encode(result))
+    }
+
     pub fn to_string(&self) -> String {
         format!(
-            "{}:{}:{}:{}:{}",
-            self.cpu_id, self.hostname, self.os_name, self.boot_time, self.uuid
+            "{}:{}:{}:{}",
+            self.cpu_id, self.hostname, self.os_name, self.machine_id
         )
     }
-    
+
     pub fn from_string(s: &str) -> Result<Self, HardwareError> {
-        let parts: Vec<&str> = s.split(':').collect();
-        if parts.len() != 5 {
+        let parts: Vec<&str> = s.splitn(4, ':').collect();
+        if parts.len() != 4 {
             return Err(HardwareError::SystemInfo("Invalid fingerprint format".to_string()));
         }
-        
+
         Ok(DeviceFingerprint {
             cpu_id: parts[0].to_string(),
             hostname: parts[1].to_string(),
             os_name: parts[2].to_string(),
-            boot_time: parts[3].parse().map_err(|_| HardwareError::SystemInfo("Invalid boot time".to_string()))?,
-            uuid: parts[4].to_string(),
+            machine_id: parts[3].to_string(),
         })
     }
 }
@@ -87,28 +116,25 @@ pub fn validate_device_fingerprint(stored: &str) -> Result<bool, HardwareError> 
     Ok(current == stored)
 }
 
-// Additional hardware identification methods
 pub fn get_mac_addresses() -> Result<Vec<String>, HardwareError> {
     let system = System::new_all();
     let networks = system.networks();
-    
+
     let mut mac_addresses = Vec::new();
     for (_interface_name, network_data) in networks {
-        let mac = network_data.mac_address();
-        if !mac.is_empty() {
-            mac_addresses.push(mac.to_string());
+        let mac = network_data.mac_address().to_string();
+        if mac != "00:00:00:00:00:00" && !mac.is_empty() {
+            mac_addresses.push(mac);
         }
     }
-    
+
     Ok(mac_addresses)
 }
 
 pub fn get_disk_serial() -> Result<String, HardwareError> {
-    // This is a simplified implementation
-    // In practice, you'd need platform-specific code or external tools
     let system = System::new_all();
     let disks = system.disks();
-    
+
     disks
         .first()
         .map(|disk| {
