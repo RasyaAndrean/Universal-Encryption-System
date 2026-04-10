@@ -30,7 +30,7 @@ Thumbs.db
 *.dylib
 
 # Cargo
-Cargo.lock
+# Cargo.lock is committed for binary crates (reproducible builds)
 **/target/
 
 # Debug files
@@ -58,3 +58,7 @@ doc/
 
 # Configuration (user-specific)
 encryptor.toml
+
+# Audit logs
+encryptor_audit.log
+*.audit.log

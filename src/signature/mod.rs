@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use zeroize::Zeroize;
 
+use crate::crypto::{encrypt_data, decrypt_data};
+
 #[derive(Debug, thiserror::Error)]
 pub enum SignatureError {
     #[error("Key generation failed: {0}")]
@@ -18,6 +20,8 @@ pub enum SignatureError {
     Io(#[from] std::io::Error),
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("Encryption error: {0}")]
+    Encryption(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +30,15 @@ pub struct KeyPair {
     pub public_key: Vec<u8>,
     #[serde(with = "serde_base64")]
     pub private_key: Vec<u8>,
+}
+
+/// Wrapper for encrypted key storage on disk.
+#[derive(Debug, Serialize, Deserialize)]
+struct EncryptedKeyFile {
+    /// If true, `data` is AES-encrypted with a passphrase.
+    encrypted: bool,
+    #[serde(with = "serde_base64")]
+    data: Vec<u8>,
 }
 
 impl KeyPair {
@@ -89,7 +102,6 @@ impl PublicKeyOnly {
     }
 }
 
-// Helper module for base64 serialization
 mod serde_base64 {
     use serde::{Deserialize, Deserializer, Serializer};
     use base64::{Engine as _, engine::general_purpose};
@@ -117,11 +129,26 @@ pub fn generate_keypair() -> Result<KeyPair, SignatureError> {
     KeyPair::new()
 }
 
-pub fn save_keypair<P: AsRef<Path>>(keypair: &KeyPair, path: P) -> Result<(), SignatureError> {
-    let json = serde_json::to_string_pretty(keypair)?;
+/// Save a keypair to disk. If `passphrase` is provided, the key JSON is
+/// encrypted with AES-256-GCM before writing.
+pub fn save_keypair_encrypted<P: AsRef<Path>>(
+    keypair: &KeyPair,
+    path: P,
+    passphrase: Option<&str>,
+) -> Result<(), SignatureError> {
+    let plain_json = serde_json::to_vec(keypair)?;
+
+    let file_data = if let Some(pass) = passphrase {
+        let encrypted = encrypt_data(&plain_json, pass, None)
+            .map_err(|e| SignatureError::Encryption(e.to_string()))?;
+        EncryptedKeyFile { encrypted: true, data: encrypted }
+    } else {
+        EncryptedKeyFile { encrypted: false, data: plain_json }
+    };
+
+    let json = serde_json::to_string_pretty(&file_data)?;
     std::fs::write(&path, &json)?;
 
-    // Set restrictive file permissions on Unix (owner read/write only)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -129,21 +156,45 @@ pub fn save_keypair<P: AsRef<Path>>(keypair: &KeyPair, path: P) -> Result<(), Si
         std::fs::set_permissions(&path, perms)?;
     }
 
-    // On Windows, mark file as hidden via attribute
-    #[cfg(windows)]
-    {
-        // Windows doesn't have Unix-style permissions, but we can
-        // warn the user to protect the file manually
-        eprintln!("Warning: Protect your private key file. Consider storing it in a secure location.");
-    }
-
     Ok(())
 }
 
-pub fn load_keypair<P: AsRef<Path>>(path: P) -> Result<KeyPair, SignatureError> {
-    let json = std::fs::read_to_string(path)?;
-    let keypair = serde_json::from_str(&json)?;
+/// Save keypair without encryption (backward compatible).
+pub fn save_keypair<P: AsRef<Path>>(keypair: &KeyPair, path: P) -> Result<(), SignatureError> {
+    save_keypair_encrypted(keypair, path, None)
+}
+
+/// Load a keypair from disk. If the file is encrypted, `passphrase` is required.
+pub fn load_keypair_encrypted<P: AsRef<Path>>(
+    path: P,
+    passphrase: Option<&str>,
+) -> Result<KeyPair, SignatureError> {
+    let json = std::fs::read_to_string(&path)?;
+
+    // Try new encrypted format first
+    if let Ok(key_file) = serde_json::from_str::<EncryptedKeyFile>(&json) {
+        if key_file.encrypted {
+            let pass = passphrase.ok_or_else(|| {
+                SignatureError::Encryption("Key file is encrypted — passphrase required".to_string())
+            })?;
+            let decrypted = decrypt_data(&key_file.data, pass, None)
+                .map_err(|e| SignatureError::Encryption(e.to_string()))?;
+            let keypair: KeyPair = serde_json::from_slice(&decrypted)?;
+            return Ok(keypair);
+        } else {
+            let keypair: KeyPair = serde_json::from_slice(&key_file.data)?;
+            return Ok(keypair);
+        }
+    }
+
+    // Fallback: try plain KeyPair JSON (old format)
+    let keypair: KeyPair = serde_json::from_str(&json)?;
     Ok(keypair)
+}
+
+/// Load keypair without passphrase (backward compatible).
+pub fn load_keypair<P: AsRef<Path>>(path: P) -> Result<KeyPair, SignatureError> {
+    load_keypair_encrypted(path, None)
 }
 
 pub fn save_public_key<P: AsRef<Path>>(public_key: &PublicKeyOnly, path: P) -> Result<(), SignatureError> {
@@ -202,24 +253,44 @@ mod tests {
     #[test]
     fn test_invalid_signature() {
         let keypair = generate_keypair().unwrap();
-        let message1 = b"Message 1";
-        let message2 = b"Message 2";
 
-        let signature = keypair.sign(message1).unwrap();
-        let is_valid = keypair.verify(message2, &signature).unwrap();
+        let signature = keypair.sign(b"Message 1").unwrap();
+        let is_valid = keypair.verify(b"Message 2", &signature).unwrap();
         assert!(!is_valid);
     }
 
     #[test]
-    fn test_key_serialization() {
+    fn test_key_serialization_plain() {
         let keypair = generate_keypair().unwrap();
         let temp_file = NamedTempFile::new().unwrap();
 
         save_keypair(&keypair, temp_file.path()).unwrap();
-        let loaded_keypair = load_keypair(temp_file.path()).unwrap();
+        let loaded = load_keypair(temp_file.path()).unwrap();
 
-        assert_eq!(keypair.public_key, loaded_keypair.public_key);
-        assert_eq!(keypair.private_key, loaded_keypair.private_key);
+        assert_eq!(keypair.public_key, loaded.public_key);
+        assert_eq!(keypair.private_key, loaded.private_key);
+    }
+
+    #[test]
+    fn test_key_serialization_encrypted() {
+        let keypair = generate_keypair().unwrap();
+        let temp_file = NamedTempFile::new().unwrap();
+        let passphrase = "keyfile_secret";
+
+        save_keypair_encrypted(&keypair, temp_file.path(), Some(passphrase)).unwrap();
+
+        // Should fail without passphrase
+        let fail = load_keypair_encrypted(temp_file.path(), None);
+        assert!(fail.is_err());
+
+        // Should succeed with correct passphrase
+        let loaded = load_keypair_encrypted(temp_file.path(), Some(passphrase)).unwrap();
+        assert_eq!(keypair.public_key, loaded.public_key);
+        assert_eq!(keypair.private_key, loaded.private_key);
+
+        // Should fail with wrong passphrase
+        let wrong = load_keypair_encrypted(temp_file.path(), Some("wrong"));
+        assert!(wrong.is_err());
     }
 
     #[test]

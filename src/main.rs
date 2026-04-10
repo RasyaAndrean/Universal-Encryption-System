@@ -5,6 +5,7 @@ mod format;
 mod cli;
 mod security;
 mod config;
+mod audit;
 
 use anyhow::Result;
 

@@ -1,10 +1,17 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Current encryption format version.
+pub const FORMAT_VERSION: u32 = 2;
+
+/// Supported format versions for backward compatibility.
+pub const SUPPORTED_FORMAT_VERSIONS: &[u32] = &[1, 2];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub argon2: Argon2Config,
     pub encryption: EncryptionConfig,
+    pub audit: AuditConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +32,18 @@ pub struct EncryptionConfig {
     pub compress: bool,
     /// Compression level 0-9 (default: 6)
     pub compression_level: u32,
+    /// Chunk size for streaming encryption in bytes (default: 64 MiB)
+    pub stream_chunk_size: usize,
+    /// Threshold above which streaming mode is used (default: 100 MiB)
+    pub stream_threshold: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditConfig {
+    /// Enable audit logging (default: true)
+    pub enabled: bool,
+    /// Path to audit log file
+    pub log_file: String,
 }
 
 impl Default for Config {
@@ -39,6 +58,12 @@ impl Default for Config {
                 max_file_size: 2 * 1024 * 1024 * 1024, // 2 GiB
                 compress: true,
                 compression_level: 6,
+                stream_chunk_size: 64 * 1024 * 1024, // 64 MiB
+                stream_threshold: 100 * 1024 * 1024,  // 100 MiB
+            },
+            audit: AuditConfig {
+                enabled: true,
+                log_file: "encryptor_audit.log".to_string(),
             },
         }
     }

@@ -1,5 +1,5 @@
 # Universal Encryption System - Configuration File
-# Copy this file to encryptor.toml and adjust as needed.
+# Copy this to encryptor.toml and adjust as needed.
 
 [argon2]
 # Memory cost in KiB (default: 19456 = 19 MiB)
@@ -16,3 +16,13 @@ max_file_size = 2147483648
 compress = true
 # Compression level 0-9 (default: 6)
 compression_level = 6
+# Chunk size for streaming reads in bytes (default: 64 MiB)
+stream_chunk_size = 67108864
+# File size threshold for streaming mode in bytes (default: 100 MiB)
+stream_threshold = 104857600
+
+[audit]
+# Enable audit logging (default: true)
+enabled = true
+# Audit log file path
+log_file = "encryptor_audit.log"
