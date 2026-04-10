@@ -6,6 +6,7 @@ use crate::crypto::{encrypt_file, decrypt_file};
 use crate::signature::{generate_keypair, save_keypair, load_keypair, save_public_key, load_public_key, sign_file, verify_file, KeyPair, PublicKeyOnly};
 use crate::format::EncryptedFile;
 use crate::hardware::{get_device_fingerprint, validate_device_fingerprint};
+use crate::security::{validate_password_strength, RateLimiter};
 
 #[derive(Parser)]
 #[command(name = "file-encryptor")]
@@ -116,11 +117,20 @@ enum Commands {
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
-    
+
+    // Rate limiter: max 3 decryption attempts per 60-second window
+    let mut rate_limiter = RateLimiter::new(3, std::time::Duration::from_secs(60));
+
     match cli.command {
         Commands::Encrypt { input, output, password, bind_device, private_key } => {
+            // Validate password strength before encryption
+            if let Err(e) = validate_password_strength(&password) {
+                eprintln!("Password rejected: {}", e);
+                std::process::exit(1);
+            }
+
             println!("Encrypting file: {:?}", input);
-            
+
             if bind_device {
                 println!("Device binding enabled");
             }
@@ -161,8 +171,14 @@ pub async fn run() -> Result<()> {
         }
         
         Commands::Decrypt { input, output, password, validate_device, public_key } => {
+            // Enforce rate limiting on decryption attempts
+            if let Err(_) = rate_limiter.check_rate_limit() {
+                eprintln!("Rate limit exceeded. Too many decryption attempts. Please wait and try again.");
+                std::process::exit(1);
+            }
+
             println!("Decrypting file: {:?}", input);
-            
+
             if validate_device {
                 println!("Device validation enabled");
             }

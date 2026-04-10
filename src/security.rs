@@ -128,7 +128,12 @@ pub fn validate_password_strength(password: &str) -> Result<(), SecurityError> {
     
     // Check for common patterns
     let common_patterns = [
-        "password", "123456", "qwerty", "abc123", "admin", "welcome"
+        "password", "123456", "qwerty", "abc123", "admin", "welcome",
+        "letmein", "monkey", "dragon", "master", "login", "princess",
+        "iloveyou", "trustno1", "sunshine", "shadow", "passw0rd",
+        "football", "baseball", "superman", "batman", "access",
+        "hello", "charlie", "donald", "654321", "1234567", "12345678",
+        "123456789", "1234567890", "000000", "111111", "121212",
     ];
     
     let password_lower = password.to_lowercase();
