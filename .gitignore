@@ -55,3 +55,6 @@ test_*
 # Documentation build
 docs/
 doc/
+
+# Configuration (user-specific)
+encryptor.toml

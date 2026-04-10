@@ -1,0 +1,18 @@
+# Universal Encryption System - Configuration File
+# Copy this file to encryptor.toml and adjust as needed.
+
+[argon2]
+# Memory cost in KiB (default: 19456 = 19 MiB)
+m_cost = 19456
+# Time cost / iterations (default: 2)
+t_cost = 2
+# Parallelism (default: 1)
+p_cost = 1
+
+[encryption]
+# Maximum file size in bytes (default: 2 GiB = 2147483648)
+max_file_size = 2147483648
+# Enable gzip compression before encryption (default: true)
+compress = true
+# Compression level 0-9 (default: 6)
+compression_level = 6

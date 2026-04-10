@@ -1,6 +1,6 @@
 [package]
 name = "file-encryptor"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["RasyaAndrean"]
 description = "Universal file encryption system with advanced security features"
@@ -24,15 +24,28 @@ hex = "0.4"
 
 # System information
 sysinfo = "0.29"
-# uuid no longer needed - device fingerprint uses deterministic SHA-256 hash
 
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
 
-# File system operations
-tokio = { version = "1.32", features = ["full"] }
-futures = "0.3"
+# Compression
+flate2 = "1.0"
+
+# Progress indicator
+indicatif = "0.17"
+
+# Configuration file
+toml = "0.8"
+
+# Directory archiving
+tar = "0.4"
+
+# Password input (hidden)
+rpassword = "7.3"
+
+# Temporary files (used in dir encryption)
+tempfile = "3.8"
 
 [dev-dependencies]
 tempfile = "3.8"

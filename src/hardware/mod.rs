@@ -1,6 +1,5 @@
 use sysinfo::{System, CpuExt, DiskExt, NetworkExt, SystemExt};
 use sha2::{Sha256, Digest};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, thiserror::Error)]
 pub enum HardwareError {
@@ -39,9 +38,6 @@ impl DeviceFingerprint {
             .long_os_version()
             .ok_or_else(|| HardwareError::SystemInfo("OS version not available".to_string()))?;
 
-        // Use a deterministic machine identifier instead of random UUID.
-        // Combine stable hardware attributes into a SHA-256 hash so the
-        // fingerprint is reproducible across calls on the same machine.
         let machine_id = Self::compute_machine_id(&cpu_id, &hostname, &system)?;
 
         Ok(DeviceFingerprint {
@@ -58,11 +54,9 @@ impl DeviceFingerprint {
         hasher.update(cpu_id.as_bytes());
         hasher.update(hostname.as_bytes());
 
-        // Include total memory as a stable hardware trait
         let total_mem = system.total_memory();
         hasher.update(total_mem.to_le_bytes());
 
-        // Include number of CPUs
         let cpu_count = system.cpus().len() as u64;
         hasher.update(cpu_count.to_le_bytes());
 
@@ -75,7 +69,7 @@ impl DeviceFingerprint {
                 macs.push(mac);
             }
         }
-        macs.sort(); // deterministic order
+        macs.sort();
         for mac in &macs {
             hasher.update(mac.as_bytes());
         }
@@ -131,15 +125,22 @@ pub fn get_mac_addresses() -> Result<Vec<String>, HardwareError> {
     Ok(mac_addresses)
 }
 
+/// Retrieve a disk identifier. Uses a hash of the disk name, mount point,
+/// and total size as a stable identifier since raw serial numbers require
+/// elevated privileges on most platforms.
 pub fn get_disk_serial() -> Result<String, HardwareError> {
     let system = System::new_all();
     let disks = system.disks();
 
-    disks
+    let disk = disks
         .first()
-        .map(|disk| {
-            let disk_name = disk.name().to_string_lossy();
-            format!("DISK_SERIAL_{}", disk_name)
-        })
-        .ok_or_else(|| HardwareError::SystemInfo("No disk found".to_string()))
+        .ok_or_else(|| HardwareError::SystemInfo("No disk found".to_string()))?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(disk.name().to_string_lossy().as_bytes());
+    hasher.update(disk.mount_point().to_string_lossy().as_bytes());
+    hasher.update(disk.total_space().to_le_bytes());
+
+    let result = hasher.finalize();
+    Ok(format!("DISK_{}", hex::encode(&result[..8])))
 }
