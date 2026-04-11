@@ -1,5 +1,5 @@
-use sysinfo::{System, CpuExt, DiskExt, NetworkExt, SystemExt};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
+use sysinfo::{CpuExt, DiskExt, NetworkExt, System, SystemExt};
 
 #[derive(Debug, thiserror::Error)]
 pub enum HardwareError {
@@ -49,7 +49,11 @@ impl DeviceFingerprint {
     }
 
     /// Builds a deterministic machine identifier from stable hardware properties.
-    fn compute_machine_id(cpu_id: &str, hostname: &str, system: &System) -> Result<String, HardwareError> {
+    fn compute_machine_id(
+        cpu_id: &str,
+        hostname: &str,
+        system: &System,
+    ) -> Result<String, HardwareError> {
         let mut hasher = Sha256::new();
         hasher.update(cpu_id.as_bytes());
         hasher.update(hostname.as_bytes());
@@ -78,17 +82,12 @@ impl DeviceFingerprint {
         Ok(hex::encode(result))
     }
 
-    pub fn to_string(&self) -> String {
-        format!(
-            "{}:{}:{}:{}",
-            self.cpu_id, self.hostname, self.os_name, self.machine_id
-        )
-    }
-
     pub fn from_string(s: &str) -> Result<Self, HardwareError> {
         let parts: Vec<&str> = s.splitn(4, ':').collect();
         if parts.len() != 4 {
-            return Err(HardwareError::SystemInfo("Invalid fingerprint format".to_string()));
+            return Err(HardwareError::SystemInfo(
+                "Invalid fingerprint format".to_string(),
+            ));
         }
 
         Ok(DeviceFingerprint {
@@ -97,6 +96,16 @@ impl DeviceFingerprint {
             os_name: parts[2].to_string(),
             machine_id: parts[3].to_string(),
         })
+    }
+}
+
+impl std::fmt::Display for DeviceFingerprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{}:{}:{}",
+            self.cpu_id, self.hostname, self.os_name, self.machine_id
+        )
     }
 }
 

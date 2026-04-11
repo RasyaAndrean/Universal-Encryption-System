@@ -1,15 +1,15 @@
-pub mod key_derivation;
 pub mod encryption;
+pub mod key_derivation;
 
-pub use key_derivation::{derive_key_from_password, derive_key_with_salt, KeyDerivationError};
-pub use encryption::{encrypt_data, decrypt_data, calculate_hash, EncryptionError};
+pub use encryption::{calculate_hash, decrypt_data, encrypt_data, EncryptionError};
+pub use key_derivation::KeyDerivationError;
 
-use std::path::Path;
-use std::io::{Read, Write, BufReader, BufWriter};
-use flate2::Compression;
-use flate2::write::GzEncoder;
-use flate2::read::GzDecoder;
 use crate::config::Config;
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::Path;
 
 pub const KEY_LENGTH: usize = 32;
 pub const NONCE_LENGTH: usize = 12;
@@ -40,16 +40,19 @@ const FLAG_COMPRESSED: u8 = 0x01;
 
 pub fn compress_data(data: &[u8], level: u32) -> Result<Vec<u8>, CryptoError> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::new(level));
-    encoder.write_all(data)
+    encoder
+        .write_all(data)
         .map_err(|e| CryptoError::Compression(e.to_string()))?;
-    encoder.finish()
+    encoder
+        .finish()
         .map_err(|e| CryptoError::Compression(e.to_string()))
 }
 
 pub fn decompress_data(data: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let mut decoder = GzDecoder::new(data);
     let mut decompressed = Vec::new();
-    decoder.read_to_end(&mut decompressed)
+    decoder
+        .read_to_end(&mut decompressed)
         .map_err(|e| CryptoError::Compression(e.to_string()))?;
     Ok(decompressed)
 }
@@ -64,9 +67,9 @@ fn check_file_size(path: &Path, max_size: u64) -> Result<u64, CryptoError> {
 }
 
 /// Encrypt a file with optional compression. Uses config for parameters.
-pub fn encrypt_file<P: AsRef<Path>>(
+pub fn encrypt_file<P: AsRef<Path>, Q: AsRef<Path>>(
     input_path: P,
-    output_path: P,
+    output_path: Q,
     password: &str,
     device_id: Option<&str>,
 ) -> Result<(), CryptoError> {
@@ -74,9 +77,9 @@ pub fn encrypt_file<P: AsRef<Path>>(
     encrypt_file_with_config(input_path, output_path, password, device_id, &config)
 }
 
-pub fn encrypt_file_with_config<P: AsRef<Path>>(
+pub fn encrypt_file_with_config<P: AsRef<Path>, Q: AsRef<Path>>(
     input_path: P,
-    output_path: P,
+    output_path: Q,
     password: &str,
     device_id: Option<&str>,
     config: &Config,
@@ -112,9 +115,9 @@ pub fn encrypt_file_with_config<P: AsRef<Path>>(
 }
 
 /// Streaming encryption for large files — reads in chunks to limit RAM usage.
-fn encrypt_file_streaming<P: AsRef<Path>>(
+fn encrypt_file_streaming<P: AsRef<Path>, Q: AsRef<Path>>(
     input_path: P,
-    output_path: P,
+    output_path: Q,
     password: &str,
     device_id: Option<&str>,
     config: &Config,
@@ -129,16 +132,24 @@ fn encrypt_file_streaming<P: AsRef<Path>>(
     let mut all_data = Vec::new();
 
     if config.encryption.compress {
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::new(config.encryption.compression_level));
+        let mut encoder = GzEncoder::new(
+            Vec::new(),
+            Compression::new(config.encryption.compression_level),
+        );
         let mut chunk = vec![0u8; config.encryption.stream_chunk_size];
         loop {
-            let n = reader.read(&mut chunk)
+            let n = reader
+                .read(&mut chunk)
                 .map_err(|e| CryptoError::Compression(e.to_string()))?;
-            if n == 0 { break; }
-            encoder.write_all(&chunk[..n])
+            if n == 0 {
+                break;
+            }
+            encoder
+                .write_all(&chunk[..n])
                 .map_err(|e| CryptoError::Compression(e.to_string()))?;
         }
-        let compressed = encoder.finish()
+        let compressed = encoder
+            .finish()
             .map_err(|e| CryptoError::Compression(e.to_string()))?;
 
         all_data.push(FLAG_COMPRESSED);
@@ -148,7 +159,9 @@ fn encrypt_file_streaming<P: AsRef<Path>>(
         let mut chunk = vec![0u8; config.encryption.stream_chunk_size];
         loop {
             let n = reader.read(&mut chunk)?;
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             all_data.extend_from_slice(&chunk[..n]);
         }
     }
@@ -164,9 +177,9 @@ fn encrypt_file_streaming<P: AsRef<Path>>(
 }
 
 /// Decrypt a file, handling both compressed and uncompressed payloads.
-pub fn decrypt_file<P: AsRef<Path>>(
+pub fn decrypt_file<P: AsRef<Path>, Q: AsRef<Path>>(
     input_path: P,
-    output_path: P,
+    output_path: Q,
     password: &str,
     device_id: Option<&str>,
 ) -> Result<(), CryptoError> {
@@ -174,9 +187,9 @@ pub fn decrypt_file<P: AsRef<Path>>(
     decrypt_file_with_config(input_path, output_path, password, device_id, &config)
 }
 
-pub fn decrypt_file_with_config<P: AsRef<Path>>(
+pub fn decrypt_file_with_config<P: AsRef<Path>, Q: AsRef<Path>>(
     input_path: P,
-    output_path: P,
+    output_path: Q,
     password: &str,
     device_id: Option<&str>,
     config: &Config,

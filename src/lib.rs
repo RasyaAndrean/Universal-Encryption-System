@@ -1,22 +1,24 @@
-pub mod crypto;
-pub mod signature;
-pub mod hardware;
-pub mod format;
-pub mod security;
-pub mod config;
 pub mod audit;
+pub mod config;
+pub mod crypto;
+pub mod format;
+pub mod hardware;
+pub mod security;
+pub mod signature;
 
-pub use crypto::{encrypt_file, decrypt_file, encrypt_file_with_config, decrypt_file_with_config, CryptoError};
 pub use crypto::encryption::EncryptionError;
-pub use signature::{generate_keypair, sign_file, verify_file, SignatureError};
-pub use hardware::{get_device_fingerprint, HardwareError};
+pub use crypto::{
+    decrypt_file, decrypt_file_with_config, encrypt_file, encrypt_file_with_config, CryptoError,
+};
 pub use format::{EncryptedFile, FileFormatError};
+pub use hardware::{get_device_fingerprint, HardwareError};
+pub use signature::{generate_keypair, sign_file, verify_file, SignatureError};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_basic_encryption_decryption() {
@@ -53,7 +55,13 @@ mod tests {
         let encrypted_file = NamedTempFile::new().unwrap();
 
         input_file.as_file().write_all(content.as_bytes()).unwrap();
-        encrypt_file(input_file.path(), encrypted_file.path(), "TestP@ss123!", None).unwrap();
+        encrypt_file(
+            input_file.path(),
+            encrypted_file.path(),
+            "TestP@ss123!",
+            None,
+        )
+        .unwrap();
 
         let encrypted_size = std::fs::metadata(encrypted_file.path()).unwrap().len();
         assert!(encrypted_size < content.len() as u64);

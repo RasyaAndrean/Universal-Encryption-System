@@ -1,25 +1,26 @@
+use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
-use std::path::PathBuf;
-use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::path::PathBuf;
 
-use crate::crypto::{encrypt_file_with_config, decrypt_file_with_config};
-use crate::signature::{
-    generate_keypair, save_keypair, save_keypair_encrypted,
-    load_keypair, load_keypair_encrypted,
-    save_public_key, load_public_key,
-    sign_file, verify_file,
-};
+use crate::audit::{AuditAction, AuditLogger};
+use crate::config::Config;
+use crate::crypto::{decrypt_file_with_config, encrypt_file_with_config};
 use crate::format::EncryptedFile;
 use crate::hardware::{get_device_fingerprint, validate_device_fingerprint};
 use crate::security::{validate_password_strength, RateLimiter};
-use crate::config::Config;
-use crate::audit::{AuditLogger, AuditAction};
+use crate::signature::{
+    generate_keypair, load_keypair, load_keypair_encrypted, load_public_key,
+    save_keypair_encrypted, save_public_key, sign_file, verify_file,
+};
 
 #[derive(Parser)]
 #[command(name = "file-encryptor")]
-#[command(about = "Universal file encryption system with advanced security features", version = "0.3.0")]
+#[command(
+    about = "Universal file encryption system with advanced security features",
+    version = "0.3.0"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -137,9 +138,7 @@ enum Commands {
     Fingerprint,
 
     /// Validate device fingerprint
-    ValidateFingerprint {
-        fingerprint: String,
-    },
+    ValidateFingerprint { fingerprint: String },
 
     /// Generate default configuration file
     InitConfig {
@@ -187,7 +186,7 @@ fn create_spinner(msg: &str) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.green} {msg}")
-            .unwrap()
+            .unwrap(),
     );
     pb.set_message(msg.to_string());
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -215,7 +214,13 @@ pub fn run() -> Result<()> {
     let mut rate_limiter = RateLimiter::new(3, std::time::Duration::from_secs(60));
 
     match cli.command {
-        Commands::Encrypt { input, output, password, bind_device, private_key } => {
+        Commands::Encrypt {
+            input,
+            output,
+            password,
+            bind_device,
+            private_key,
+        } => {
             validate_input_exists(&input)?;
 
             let password = match password {
@@ -235,12 +240,16 @@ pub fn run() -> Result<()> {
                 None
             };
 
-            let result = if let Some(keypair) = keypair {
+            let result: Result<(), anyhow::Error> = if let Some(keypair) = keypair {
                 EncryptedFile::encrypt_and_sign(&input, &output, &password, &keypair, bind_device)
                     .map(|_| ())
                     .map_err(|e| e.into())
             } else {
-                let device_id = if bind_device { Some(get_device_fingerprint()?) } else { None };
+                let device_id = if bind_device {
+                    Some(get_device_fingerprint()?)
+                } else {
+                    None
+                };
                 encrypt_file_with_config(&input, &output, &password, device_id.as_deref(), &config)
                     .map_err(|e| e.into())
             };
@@ -252,13 +261,24 @@ pub fn run() -> Result<()> {
                 }
                 Err(e) => {
                     pb.finish_with_message(format!("Encryption failed: {}", e));
-                    audit.log(AuditAction::Encrypt, &input.display().to_string(), false, &e.to_string());
+                    audit.log(
+                        AuditAction::Encrypt,
+                        &input.display().to_string(),
+                        false,
+                        &e.to_string(),
+                    );
                 }
             }
             result?;
         }
 
-        Commands::Decrypt { input, output, password, validate_device, public_key } => {
+        Commands::Decrypt {
+            input,
+            output,
+            password,
+            validate_device,
+            public_key,
+        } => {
             validate_input_exists(&input)?;
             if rate_limiter.check_rate_limit().is_err() {
                 eprintln!("Rate limit exceeded. Please wait and try again.");
@@ -274,24 +294,51 @@ pub fn run() -> Result<()> {
 
             let result: Result<()> = if let Some(key_path) = public_key {
                 let pk = load_public_key(key_path)?;
-                let metadata = EncryptedFile::decrypt_and_verify(&input, &output, &password, &pk, validate_device)?;
+                let metadata = EncryptedFile::decrypt_and_verify(
+                    &input,
+                    &output,
+                    &password,
+                    &pk,
+                    validate_device,
+                )?;
                 pb.finish_with_message("File decrypted and verified!");
                 println!("Original filename: {}", metadata.original_filename);
                 println!("File size: {} bytes", metadata.file_size);
                 Ok(())
             } else {
-                let device_id = if validate_device { Some(get_device_fingerprint()?) } else { None };
-                decrypt_file_with_config(&input, &output, &password, device_id.as_deref(), &config)?;
+                let device_id = if validate_device {
+                    Some(get_device_fingerprint()?)
+                } else {
+                    None
+                };
+                decrypt_file_with_config(
+                    &input,
+                    &output,
+                    &password,
+                    device_id.as_deref(),
+                    &config,
+                )?;
                 pb.finish_with_message("File decrypted successfully!");
                 Ok(())
             };
 
             let success = result.is_ok();
-            audit.log(AuditAction::Decrypt, &input.display().to_string(), success, "");
+            audit.log(
+                AuditAction::Decrypt,
+                &input.display().to_string(),
+                success,
+                "",
+            );
             result?;
         }
 
-        Commands::EncryptDir { input, output, password, bind_device, private_key } => {
+        Commands::EncryptDir {
+            input,
+            output,
+            password,
+            bind_device,
+            private_key,
+        } => {
             validate_dir_exists(&input)?;
 
             let password = match password {
@@ -312,17 +359,44 @@ pub fn run() -> Result<()> {
 
             if let Some(key_path) = private_key {
                 let keypair = load_keypair(key_path)?;
-                EncryptedFile::encrypt_and_sign(temp_tar.path(), &output, &password, &keypair, bind_device)?;
+                EncryptedFile::encrypt_and_sign(
+                    temp_tar.path(),
+                    &output,
+                    &password,
+                    &keypair,
+                    bind_device,
+                )?;
             } else {
-                let device_id = if bind_device { Some(get_device_fingerprint()?) } else { None };
-                encrypt_file_with_config(temp_tar.path(), &output, &password, device_id.as_deref(), &config)?;
+                let device_id = if bind_device {
+                    Some(get_device_fingerprint()?)
+                } else {
+                    None
+                };
+                encrypt_file_with_config(
+                    temp_tar.path(),
+                    &output,
+                    &password,
+                    device_id.as_deref(),
+                    &config,
+                )?;
             }
 
             pb.finish_with_message("Directory encrypted successfully!");
-            audit.log(AuditAction::EncryptDir, &input.display().to_string(), true, "");
+            audit.log(
+                AuditAction::EncryptDir,
+                &input.display().to_string(),
+                true,
+                "",
+            );
         }
 
-        Commands::DecryptDir { input, output, password, validate_device, public_key } => {
+        Commands::DecryptDir {
+            input,
+            output,
+            password,
+            validate_device,
+            public_key,
+        } => {
             validate_input_exists(&input)?;
             if rate_limiter.check_rate_limit().is_err() {
                 eprintln!("Rate limit exceeded. Please wait and try again.");
@@ -339,10 +413,26 @@ pub fn run() -> Result<()> {
 
             if let Some(key_path) = public_key {
                 let pk = load_public_key(key_path)?;
-                EncryptedFile::decrypt_and_verify(&input, temp_tar.path(), &password, &pk, validate_device)?;
+                EncryptedFile::decrypt_and_verify(
+                    &input,
+                    temp_tar.path(),
+                    &password,
+                    &pk,
+                    validate_device,
+                )?;
             } else {
-                let device_id = if validate_device { Some(get_device_fingerprint()?) } else { None };
-                decrypt_file_with_config(&input, temp_tar.path(), &password, device_id.as_deref(), &config)?;
+                let device_id = if validate_device {
+                    Some(get_device_fingerprint()?)
+                } else {
+                    None
+                };
+                decrypt_file_with_config(
+                    &input,
+                    temp_tar.path(),
+                    &password,
+                    device_id.as_deref(),
+                    &config,
+                )?;
             }
 
             pb.set_message("Extracting archive...".to_string());
@@ -350,10 +440,20 @@ pub fn run() -> Result<()> {
             extract_archive(&tar_data, &output)?;
 
             pb.finish_with_message("Directory decrypted and extracted!");
-            audit.log(AuditAction::DecryptDir, &input.display().to_string(), true, "");
+            audit.log(
+                AuditAction::DecryptDir,
+                &input.display().to_string(),
+                true,
+                "",
+            );
         }
 
-        Commands::ReEncrypt { input, output, old_password, new_password } => {
+        Commands::ReEncrypt {
+            input,
+            output,
+            old_password,
+            new_password,
+        } => {
             validate_input_exists(&input)?;
 
             let old_pass = match old_password {
@@ -365,7 +465,9 @@ pub fn run() -> Result<()> {
                 None => {
                     let p = rpassword::prompt_password("Enter new password: ")?;
                     let c = rpassword::prompt_password("Confirm new password: ")?;
-                    if p != c { anyhow::bail!("New passwords do not match"); }
+                    if p != c {
+                        anyhow::bail!("New passwords do not match");
+                    }
                     p
                 }
             };
@@ -383,10 +485,19 @@ pub fn run() -> Result<()> {
             encrypt_file_with_config(temp.path(), &output, &new_pass, None, &config)?;
 
             pb.finish_with_message("File re-encrypted with new password!");
-            audit.log(AuditAction::ReEncrypt, &input.display().to_string(), true, "");
+            audit.log(
+                AuditAction::ReEncrypt,
+                &input.display().to_string(),
+                true,
+                "",
+            );
         }
 
-        Commands::GenerateKeys { output_dir, name, passphrase } => {
+        Commands::GenerateKeys {
+            output_dir,
+            name,
+            passphrase,
+        } => {
             let pb = create_spinner("Generating Ed25519 key pair...");
 
             let keypair = generate_keypair()?;
@@ -402,10 +513,20 @@ pub fn run() -> Result<()> {
             if passphrase.is_some() {
                 println!("Private key is encrypted with your passphrase.");
             }
-            audit.log(AuditAction::GenerateKeys, &private_key_path.display().to_string(), true, "");
+            audit.log(
+                AuditAction::GenerateKeys,
+                &private_key_path.display().to_string(),
+                true,
+                "",
+            );
         }
 
-        Commands::Sign { file, private_key, output, passphrase } => {
+        Commands::Sign {
+            file,
+            private_key,
+            output,
+            passphrase,
+        } => {
             validate_input_exists(&file)?;
             let pb = create_spinner("Signing file...");
 
@@ -424,7 +545,11 @@ pub fn run() -> Result<()> {
             audit.log(AuditAction::Sign, &file.display().to_string(), true, "");
         }
 
-        Commands::Verify { file, public_key, signature } => {
+        Commands::Verify {
+            file,
+            public_key,
+            signature,
+        } => {
             validate_input_exists(&file)?;
             let pb = create_spinner("Verifying...");
 
@@ -437,7 +562,12 @@ pub fn run() -> Result<()> {
                 audit.log(AuditAction::Verify, &file.display().to_string(), true, "");
             } else {
                 pb.finish_with_message("Signature verification FAILED!");
-                audit.log(AuditAction::Verify, &file.display().to_string(), false, "invalid signature");
+                audit.log(
+                    AuditAction::Verify,
+                    &file.display().to_string(),
+                    false,
+                    "invalid signature",
+                );
                 std::process::exit(1);
             }
         }

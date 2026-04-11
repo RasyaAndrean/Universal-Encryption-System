@@ -1,9 +1,7 @@
+use crate::config::AuditConfig;
+use chrono::Local;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::Path;
-use chrono::Local;
-
-use crate::config::AuditConfig;
 
 pub enum AuditAction {
     Encrypt,
@@ -49,7 +47,10 @@ impl AuditLogger {
 
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
         let status = if success { "OK" } else { "FAIL" };
-        let line = format!("[{}] {} {} target={} {}\n", timestamp, action, status, target, details);
+        let line = format!(
+            "[{}] {} {} target={} {}\n",
+            timestamp, action, status, target, details
+        );
 
         if let Ok(mut file) = OpenOptions::new()
             .create(true)

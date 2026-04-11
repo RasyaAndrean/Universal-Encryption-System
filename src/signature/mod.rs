@@ -1,10 +1,9 @@
-use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature, Signer, Verifier};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use zeroize::Zeroize;
 
-use crate::crypto::{encrypt_data, decrypt_data};
+use crate::crypto::{decrypt_data, encrypt_data};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SignatureError {
@@ -44,32 +43,36 @@ struct EncryptedKeyFile {
 impl KeyPair {
     pub fn new() -> Result<Self, SignatureError> {
         let mut csprng = OsRng;
-        let keypair = Keypair::generate(&mut csprng);
+        let signing_key = SigningKey::generate(&mut csprng);
 
         Ok(KeyPair {
-            public_key: keypair.public.to_bytes().to_vec(),
-            private_key: keypair.secret.to_bytes().to_vec(),
+            public_key: signing_key.verifying_key().to_bytes().to_vec(),
+            private_key: signing_key.to_bytes().to_vec(),
         })
     }
 
     pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>, SignatureError> {
-        let secret_key = SecretKey::from_bytes(&self.private_key)
-            .map_err(|e| SignatureError::InvalidKeyFormat(e.to_string()))?;
-        let public_key = PublicKey::from_bytes(&self.public_key)
-            .map_err(|e| SignatureError::InvalidKeyFormat(e.to_string()))?;
-        let keypair = Keypair { secret: secret_key, public: public_key };
+        let secret_bytes: [u8; 32] =
+            self.private_key.as_slice().try_into().map_err(|_| {
+                SignatureError::InvalidKeyFormat("Invalid private key length".into())
+            })?;
+        let signing_key = SigningKey::from_bytes(&secret_bytes);
 
-        let signature = keypair.sign(message);
+        let signature = signing_key.sign(message);
         Ok(signature.to_bytes().to_vec())
     }
 
     pub fn verify(&self, message: &[u8], signature_bytes: &[u8]) -> Result<bool, SignatureError> {
-        let public_key = PublicKey::from_bytes(&self.public_key)
+        let pub_bytes: [u8; 32] =
+            self.public_key.as_slice().try_into().map_err(|_| {
+                SignatureError::InvalidKeyFormat("Invalid public key length".into())
+            })?;
+        let verifying_key = VerifyingKey::from_bytes(&pub_bytes)
             .map_err(|e| SignatureError::InvalidKeyFormat(e.to_string()))?;
         let signature = Signature::try_from(signature_bytes)
             .map_err(|e| SignatureError::InvalidKeyFormat(e.to_string()))?;
 
-        match public_key.verify(message, &signature) {
+        match verifying_key.verify(message, &signature) {
             Ok(()) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -90,12 +93,16 @@ pub struct PublicKeyOnly {
 
 impl PublicKeyOnly {
     pub fn verify(&self, message: &[u8], signature_bytes: &[u8]) -> Result<bool, SignatureError> {
-        let public_key = PublicKey::from_bytes(&self.public_key)
+        let pub_bytes: [u8; 32] =
+            self.public_key.as_slice().try_into().map_err(|_| {
+                SignatureError::InvalidKeyFormat("Invalid public key length".into())
+            })?;
+        let verifying_key = VerifyingKey::from_bytes(&pub_bytes)
             .map_err(|e| SignatureError::InvalidKeyFormat(e.to_string()))?;
         let signature = Signature::try_from(signature_bytes)
             .map_err(|e| SignatureError::InvalidKeyFormat(e.to_string()))?;
 
-        match public_key.verify(message, &signature) {
+        match verifying_key.verify(message, &signature) {
             Ok(()) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -103,8 +110,8 @@ impl PublicKeyOnly {
 }
 
 mod serde_base64 {
+    use base64::{engine::general_purpose, Engine as _};
     use serde::{Deserialize, Deserializer, Serializer};
-    use base64::{Engine as _, engine::general_purpose};
 
     pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -141,9 +148,15 @@ pub fn save_keypair_encrypted<P: AsRef<Path>>(
     let file_data = if let Some(pass) = passphrase {
         let encrypted = encrypt_data(&plain_json, pass, None)
             .map_err(|e| SignatureError::Encryption(e.to_string()))?;
-        EncryptedKeyFile { encrypted: true, data: encrypted }
+        EncryptedKeyFile {
+            encrypted: true,
+            data: encrypted,
+        }
     } else {
-        EncryptedKeyFile { encrypted: false, data: plain_json }
+        EncryptedKeyFile {
+            encrypted: false,
+            data: plain_json,
+        }
     };
 
     let json = serde_json::to_string_pretty(&file_data)?;
@@ -175,7 +188,9 @@ pub fn load_keypair_encrypted<P: AsRef<Path>>(
     if let Ok(key_file) = serde_json::from_str::<EncryptedKeyFile>(&json) {
         if key_file.encrypted {
             let pass = passphrase.ok_or_else(|| {
-                SignatureError::Encryption("Key file is encrypted — passphrase required".to_string())
+                SignatureError::Encryption(
+                    "Key file is encrypted — passphrase required".to_string(),
+                )
             })?;
             let decrypted = decrypt_data(&key_file.data, pass, None)
                 .map_err(|e| SignatureError::Encryption(e.to_string()))?;
@@ -197,7 +212,10 @@ pub fn load_keypair<P: AsRef<Path>>(path: P) -> Result<KeyPair, SignatureError> 
     load_keypair_encrypted(path, None)
 }
 
-pub fn save_public_key<P: AsRef<Path>>(public_key: &PublicKeyOnly, path: P) -> Result<(), SignatureError> {
+pub fn save_public_key<P: AsRef<Path>>(
+    public_key: &PublicKeyOnly,
+    path: P,
+) -> Result<(), SignatureError> {
     let json = serde_json::to_string_pretty(public_key)?;
     std::fs::write(path, json)?;
     Ok(())

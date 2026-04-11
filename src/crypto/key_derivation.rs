@@ -1,7 +1,10 @@
-use argon2::{Argon2, Params, Algorithm, Version, password_hash::{SaltString, PasswordHasher}};
+use argon2::{
+    password_hash::{PasswordHasher, SaltString},
+    Algorithm, Argon2, Params, Version,
+};
 use rand::rngs::OsRng;
-use zeroize::Zeroize;
 use std::convert::TryInto;
+use zeroize::Zeroize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum KeyDerivationError {
@@ -26,8 +29,8 @@ impl Drop for DerivedKey {
 
 // Recommended Argon2 parameters for file encryption
 const ARGON2_M_COST: u32 = 19456; // 19 MiB
-const ARGON2_T_COST: u32 = 2;     // 2 iterations
-const ARGON2_P_COST: u32 = 1;     // 1 thread
+const ARGON2_T_COST: u32 = 2; // 2 iterations
+const ARGON2_P_COST: u32 = 1; // 1 thread
 
 /// Combine password and optional device_id with length-prefixed format
 /// to prevent collisions (e.g. "a:b" + "c" vs "a" + "b:c").
@@ -41,27 +44,29 @@ fn build_input(password: &str, device_id: Option<&str>) -> String {
 
 /// Create configured Argon2 instance with standard parameters.
 fn build_argon2() -> Result<Argon2<'static>, KeyDerivationError> {
-    let params = Params::new(
-        ARGON2_M_COST,
-        ARGON2_T_COST,
-        ARGON2_P_COST,
-        Some(32),
-    ).map_err(|e| KeyDerivationError::InvalidParams(e.to_string()))?;
+    let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, Some(32))
+        .map_err(|e| KeyDerivationError::InvalidParams(e.to_string()))?;
 
     Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
 }
 
 /// Hash password with given salt and return 32-byte key.
-fn hash_password(argon2: &Argon2, input: &str, salt: &SaltString) -> Result<[u8; 32], KeyDerivationError> {
+fn hash_password(
+    argon2: &Argon2,
+    input: &str,
+    salt: &SaltString,
+) -> Result<[u8; 32], KeyDerivationError> {
     let hash = argon2
         .hash_password(input.as_bytes(), salt)
         .map_err(|e| KeyDerivationError::Argon2(e.to_string()))?;
 
-    let key_bytes = hash.hash.ok_or_else(||
-        KeyDerivationError::Argon2("Hash generation failed".to_string())
-    )?;
+    let key_bytes = hash
+        .hash
+        .ok_or_else(|| KeyDerivationError::Argon2("Hash generation failed".to_string()))?;
 
-    key_bytes.as_bytes().try_into()
+    key_bytes
+        .as_bytes()
+        .try_into()
         .map_err(|_| KeyDerivationError::KeyLengthMismatch)
 }
 
@@ -72,13 +77,22 @@ pub fn derive_key_from_password(
     let combined_input = build_input(password, device_id);
 
     let salt = SaltString::generate(&mut OsRng);
-    let salt_bytes: [u8; 16] = salt.as_bytes()[..16].try_into()
+    let mut decode_buf = [0u8; 64];
+    let decoded = salt
+        .as_salt()
+        .decode_b64(&mut decode_buf)
+        .map_err(|e| KeyDerivationError::InvalidParams(e.to_string()))?;
+    let salt_bytes: [u8; 16] = decoded[..16]
+        .try_into()
         .map_err(|_| KeyDerivationError::InvalidParams("Salt conversion failed".to_string()))?;
 
     let argon2 = build_argon2()?;
     let key = hash_password(&argon2, &combined_input, &salt)?;
 
-    Ok(DerivedKey { key, salt: salt_bytes })
+    Ok(DerivedKey {
+        key,
+        salt: salt_bytes,
+    })
 }
 
 pub fn derive_key_with_salt(
@@ -88,7 +102,7 @@ pub fn derive_key_with_salt(
 ) -> Result<[u8; 32], KeyDerivationError> {
     let combined_input = build_input(password, device_id);
 
-    let salt_string = SaltString::b64_encode(salt)
+    let salt_string = SaltString::encode_b64(salt)
         .map_err(|e| KeyDerivationError::InvalidParams(e.to_string()))?;
 
     let argon2 = build_argon2()?;

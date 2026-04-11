@@ -2,10 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::crypto::{encrypt_data, decrypt_data, calculate_hash, compress_data, decompress_data, EncryptionError};
-use crate::signature::{KeyPair, PublicKeyOnly, SignatureError};
-use crate::hardware::{get_device_fingerprint, HardwareError};
 use crate::config::{Config, FORMAT_VERSION, SUPPORTED_FORMAT_VERSIONS};
+use crate::crypto::{
+    calculate_hash, compress_data, decompress_data, decrypt_data, encrypt_data, EncryptionError,
+};
+use crate::hardware::{get_device_fingerprint, HardwareError};
+use crate::signature::{KeyPair, PublicKeyOnly, SignatureError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FileFormatError {
@@ -126,9 +128,9 @@ pub struct EncryptedFile {
 }
 
 impl EncryptedFile {
-    pub fn encrypt_and_sign<P: AsRef<Path>>(
+    pub fn encrypt_and_sign<P: AsRef<Path>, Q: AsRef<Path>>(
         input_path: P,
-        output_path: P,
+        output_path: Q,
         password: &str,
         keypair: &KeyPair,
         bind_to_device: bool,
@@ -138,7 +140,10 @@ impl EncryptedFile {
         // Check file size
         let meta = std::fs::metadata(input_path.as_ref())?;
         if meta.len() > config.encryption.max_file_size {
-            return Err(FileFormatError::FileTooLarge(meta.len(), config.encryption.max_file_size));
+            return Err(FileFormatError::FileTooLarge(
+                meta.len(),
+                config.encryption.max_file_size,
+            ));
         }
 
         let plaintext = std::fs::read(&input_path)?;
@@ -195,9 +200,9 @@ impl EncryptedFile {
         })
     }
 
-    pub fn decrypt_and_verify<P: AsRef<Path>>(
+    pub fn decrypt_and_verify<P: AsRef<Path>, Q: AsRef<Path>>(
         input_path: P,
-        output_path: P,
+        output_path: Q,
         password: &str,
         public_key: &PublicKeyOnly,
         validate_device: bool,
@@ -209,7 +214,8 @@ impl EncryptedFile {
         file_structure.header.validate_version()?;
 
         // Verify signature
-        let is_valid = public_key.verify(&file_structure.encrypted_data, &file_structure.signature)?;
+        let is_valid =
+            public_key.verify(&file_structure.encrypted_data, &file_structure.signature)?;
         if !is_valid {
             return Err(FileFormatError::IntegrityCheckFailed);
         }
@@ -227,7 +233,9 @@ impl EncryptedFile {
             return Err(FileFormatError::InvalidFormat);
         }
         let header_len = u32::from_le_bytes(
-            decrypted_data[..4].try_into().map_err(|_| FileFormatError::InvalidFormat)?
+            decrypted_data[..4]
+                .try_into()
+                .map_err(|_| FileFormatError::InvalidFormat)?,
         ) as usize;
         if decrypted_data.len() < 4 + header_len {
             return Err(FileFormatError::InvalidFormat);
@@ -273,8 +281,8 @@ struct EncryptedFileStructure {
 }
 
 mod serde_base64 {
+    use base64::{engine::general_purpose, Engine as _};
     use serde::{Deserialize, Deserializer, Serializer};
-    use base64::{Engine as _, engine::general_purpose};
 
     pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -351,7 +359,8 @@ mod tests {
             "correct_password",
             &keypair,
             false,
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = EncryptedFile::decrypt_and_verify(
             encrypted_file.path(),
@@ -381,7 +390,8 @@ mod tests {
             "test_password",
             &keypair,
             false,
-        ).unwrap();
+        )
+        .unwrap();
 
         let metadata = EncryptedFile::decrypt_and_verify(
             encrypted_file.path(),
@@ -389,7 +399,8 @@ mod tests {
             "test_password",
             &public_key,
             false,
-        ).unwrap();
+        )
+        .unwrap();
 
         let decrypted = std::fs::read(decrypted_file.path()).unwrap();
         assert_eq!(decrypted, content.as_bytes());

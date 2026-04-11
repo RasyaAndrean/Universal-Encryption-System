@@ -59,7 +59,7 @@ impl Default for Config {
                 compress: true,
                 compression_level: 6,
                 stream_chunk_size: 64 * 1024 * 1024, // 64 MiB
-                stream_threshold: 100 * 1024 * 1024,  // 100 MiB
+                stream_threshold: 100 * 1024 * 1024, // 100 MiB
             },
             audit: AuditConfig {
                 enabled: true,
@@ -77,10 +77,7 @@ impl Config {
     }
 
     pub fn load_or_default() -> Self {
-        let config_paths = [
-            PathBuf::from("encryptor.toml"),
-            dirs_config_path(),
-        ];
+        let config_paths = [PathBuf::from("encryptor.toml"), dirs_config_path()];
 
         for path in &config_paths {
             if path.exists() {
@@ -102,10 +99,11 @@ impl Config {
 }
 
 fn dirs_config_path() -> PathBuf {
-    if let Some(home) = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-    {
-        PathBuf::from(home).join(".config").join("file-encryptor").join("config.toml")
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        PathBuf::from(home)
+            .join(".config")
+            .join("file-encryptor")
+            .join("config.toml")
     } else {
         PathBuf::from("encryptor.toml")
     }
