@@ -1,185 +1,149 @@
-# File Encryptor - Universal Encryption System
+# Universal Encryption System
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/RasyaAndrean/Universal-Encryption-System/actions/workflows/ci.yml/badge.svg)](https://github.com/RasyaAndrean/Universal-Encryption-System/actions/workflows/ci.yml)
-[![Security](https://img.shields.io/badge/security-AES--256--GCM-blue)](SECURITY.md)
+[![Release](https://img.shields.io/github/v/release/RasyaAndrean/Universal-Encryption-System)](https://github.com/RasyaAndrean/Universal-Encryption-System/releases)
+[![Security](https://img.shields.io/badge/crypto-AES--256--GCM%20%7C%20Argon2id%20%7C%20Ed25519-blue)](SECURITY.md)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)](#)
 
-A comprehensive file encryption system built in Rust with AES-256-GCM encryption, Ed25519 digital signatures, Argon2id key derivation, gzip compression, hardware device binding, streaming support for large files, and audit logging.
+A comprehensive file encryption system built in Rust. Encrypt files and directories with AES-256-GCM, sign them with Ed25519, bind to specific hardware, and compress automatically — all from one CLI tool.
 
-## Features
+## Highlights
 
-### Core Security
-- **AES-256-GCM** authenticated encryption with integrity protection
-- **Argon2id** password-based key derivation (configurable parameters)
-- **Ed25519** digital signatures for file authenticity
-- **Device binding** ties encrypted files to specific hardware
-- **Secure memory** automatic zeroization of sensitive data
-
-### v0.3.0 Highlights
-- **Gzip compression** before encryption (automatic, reduces file size)
-- **Streaming encryption** for large files (configurable threshold, default 100 MiB)
-- **Directory encryption** archive and encrypt entire directories
-- **Re-encrypt command** change password without manual decrypt + re-encrypt
-- **Encrypted private keys** protect key files with a passphrase
-- **Configuration file** (`encryptor.toml`) for Argon2, compression, limits
-- **Audit logging** all operations logged with timestamps
+- **AES-256-GCM** authenticated encryption with **Argon2id** key derivation
+- **Gzip compression** before encryption (automatic, reduces output size)
+- **Streaming encryption** for large files (configurable, default >100 MiB)
+- **Ed25519 digital signatures** with encrypted private key storage
+- **Directory encryption** via tar archiving
+- **Device binding** ties files to specific hardware (deterministic SHA-256 fingerprint)
+- **Re-encrypt** command to change passwords without manual decrypt/re-encrypt
+- **Configuration file** (`encryptor.toml`) for all parameters
+- **Audit logging** of all operations with timestamps
 - **Shell completions** for bash, zsh, fish, powershell
-- **Progress indicators** spinner for all operations
-- **Interactive password** prompts with confirmation
-- **Rate limiting** on decryption attempts
-- **Format versioning** backward compatible decryption of older formats
-- **CI/CD pipeline** build + test on Linux/Windows/macOS
-- **Release workflow** automatic binary builds on git tag
+- **Interactive password** prompts with confirmation and strength validation
+- **Rate limiting** on decryption attempts (brute-force protection)
+- **Format versioning** with backward compatibility
+- **Cross-platform CI/CD** with automatic binary releases
 
-## Installation
+## Quick Start
 
-### Prerequisites
-- Rust 1.70+ and Cargo
-
-### Build from Source
 ```bash
+# Build
 git clone https://github.com/RasyaAndrean/Universal-Encryption-System.git
 cd Universal-Encryption-System
 cargo build --release
-# Binary: target/release/file-encryptor
-```
 
-## Usage
-
-### Encrypt a File
-```bash
-# With password on command line
-file-encryptor encrypt -i secret.txt -o secret.enc -p "MyStr0ngP@ss123!"
-
-# Interactive password prompt (recommended)
+# Encrypt a file (interactive password prompt)
 file-encryptor encrypt -i secret.txt -o secret.enc
 
-# With device binding + digital signature
-file-encryptor encrypt -i secret.txt -o secret.enc --bind-device -k keys/my_private.json
-```
+# Decrypt
+file-encryptor decrypt -i secret.enc -o secret.txt
 
-### Decrypt a File
-```bash
-file-encryptor decrypt -i secret.enc -o secret.txt -p "MyStr0ngP@ss123!"
-
-# With signature verification
-file-encryptor decrypt -i secret.enc -o secret.txt -k keys/my_public.json
-```
-
-### Encrypt / Decrypt a Directory
-```bash
+# Encrypt a directory
 file-encryptor encrypt-dir -i ./my-folder -o folder.enc
-file-encryptor decrypt-dir -i folder.enc -o ./my-folder-restored
-```
 
-### Re-encrypt with New Password
-```bash
+# Change password
 file-encryptor re-encrypt -i secret.enc -o secret_new.enc
 ```
 
-### Generate Key Pair
-```bash
-# Plaintext private key
-file-encryptor generate-keys -o ./keys -n mykey
+## All Commands
 
-# Encrypted private key (recommended)
-file-encryptor generate-keys -o ./keys -n mykey --passphrase "KeyFileSecret!"
+| Command | Description |
+|---------|-------------|
+| `encrypt` | Encrypt a file with optional signing and device binding |
+| `decrypt` | Decrypt a file with optional signature verification |
+| `encrypt-dir` | Archive and encrypt a directory |
+| `decrypt-dir` | Decrypt and extract a directory |
+| `re-encrypt` | Change password on an encrypted file |
+| `generate-keys` | Generate Ed25519 key pair (optional passphrase encryption) |
+| `sign` | Sign a file with private key |
+| `verify` | Verify a file signature |
+| `fingerprint` | Show device fingerprint |
+| `validate-fingerprint` | Validate a stored fingerprint |
+| `init-config` | Generate default configuration file |
+| `completions` | Generate shell completions (bash/zsh/fish/powershell) |
+
+## Encryption with Signing
+
+```bash
+# Generate keys (encrypted with passphrase)
+file-encryptor generate-keys -o ./keys -n mykey --passphrase "KeySecret!"
+
+# Encrypt + sign
+file-encryptor encrypt -i file.txt -o file.enc -k keys/mykey_private.json
+
+# Decrypt + verify
+file-encryptor decrypt -i file.enc -o file.txt -k keys/mykey_public.json
 ```
 
-### Sign / Verify
+## Device Binding
+
 ```bash
-file-encryptor sign -f document.txt -k keys/mykey_private.json
-file-encryptor verify -f document.txt -k keys/mykey_public.json -s document.sig
+file-encryptor encrypt -i secret.txt -o secret.enc --bind-device
+file-encryptor decrypt -i secret.enc -o secret.txt --validate-device
 ```
 
-### Device Fingerprint
+## Configuration
+
 ```bash
-file-encryptor fingerprint
-file-encryptor validate-fingerprint "GenuineIntel:MYPC:Windows..."
+file-encryptor init-config  # Creates encryptor.toml
 ```
 
-### Shell Completions
-```bash
-# Bash
-file-encryptor completions bash > ~/.local/share/bash-completion/completions/file-encryptor
-
-# Zsh
-file-encryptor completions zsh > ~/.zfunc/_file-encryptor
-
-# Fish
-file-encryptor completions fish > ~/.config/fish/completions/file-encryptor.fish
-
-# PowerShell
-file-encryptor completions powershell > file-encryptor.ps1
-```
-
-### Configuration
-```bash
-# Generate default config
-file-encryptor init-config
-
-# Edit encryptor.toml to customize:
-# - Argon2 parameters (m_cost, t_cost, p_cost)
-# - Max file size
-# - Compression on/off and level
-# - Streaming threshold
-# - Audit log path
-```
+Configurable: Argon2 parameters, max file size, compression level, streaming threshold, audit log path. See [encryptor.example.toml](encryptor.example.toml).
 
 ## Password Requirements
 
-- Minimum 12 characters
-- At least 2 uppercase + 2 lowercase letters
-- At least 2 digits + 1 special character
-- No common patterns (password, qwerty, 123456, etc.)
+12+ characters, 2 uppercase, 2 lowercase, 2 digits, 1 special character, no common patterns.
 
 ## File Format
 
 ```
-EncryptedFileStructure (JSON):
-  header:
-    magic: "SECURE\0\0"
-    version: 2
-    metadata: { filename, size, timestamps, device_fingerprint }
-    data_hash: SHA-256 of original content
-    compressed: true/false
+Format v2 (JSON):
+  header: magic + version(2) + metadata + SHA-256 hash + compressed flag
   encrypted_data: base64(AES-256-GCM ciphertext)
   signature: base64(Ed25519 signature)
 ```
 
-Format v1 files (without compression) are still decryptable.
+Format v1 files are still decryptable (backward compatible).
 
-## Benchmarks
+## Documentation
 
-```bash
-cargo bench
-```
-
-Benchmarks Argon2id key derivation and AES-256-GCM encrypt/decrypt throughput at 1 KiB, 64 KiB, and 1 MiB.
+| Document | Description |
+|----------|-------------|
+| [Quick Start](documentation/QUICK_START.md) | 5-minute setup guide |
+| [Installation](documentation/INSTALLATION.md) | Full build and setup |
+| [API Reference](documentation/API.md) | Rust library API |
+| [Advanced Usage](documentation/ADVANCED_USAGE.md) | Config, batch ops, CI/CD |
+| [Troubleshooting](documentation/TROUBLESHOOTING.md) | Error solutions |
+| [Architecture](ARCHITECTURE.md) | System design |
+| [Security](SECURITY.md) | Threat model and crypto details |
 
 ## Development
 
 ```bash
-# Run tests
-cargo test
-
-# Run clippy
-cargo clippy
-
-# Format code
-cargo fmt
-
-# Generate docs
-cargo doc --open
+cargo test          # Run tests
+cargo clippy        # Lint
+cargo fmt           # Format
+cargo bench         # Benchmarks (Argon2id + AES-GCM throughput)
+cargo doc --open    # API docs
 ```
 
-## Architecture
+## Contributing
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for system design details.
-See [SECURITY.md](SECURITY.md) for threat model and crypto implementation details.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Make your changes and add tests
+4. Run `cargo test && cargo clippy && cargo fmt -- --check`
+5. Commit and push
+6. Open a Pull Request
 
 ## License
 
 MIT License - see [LICENSE](LICENSE).
+
+## Acknowledgments
+
+- [RustCrypto](https://github.com/RustCrypto) ecosystem for cryptographic primitives
+- [clap](https://github.com/clap-rs/clap) for CLI framework
+- [sysinfo](https://github.com/GuillaumeGomez/sysinfo) for hardware fingerprinting

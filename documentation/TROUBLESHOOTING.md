@@ -1,458 +1,250 @@
 # Troubleshooting Guide
 
-## Common Issues and Solutions
+## Installation Issues
 
-### 1. Installation and Build Problems
+### `cargo build` fails with dependency errors
 
-#### Issue: Rust/Cargo not found
-**Error Message:** `command not found: rustc` or `command not found: cargo`
-
-**Solutions:**
 ```bash
-# Install Rust using rustup (recommended)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# Update Rust toolchain
+rustup update stable
 
-# Or install via package manager
-# Ubuntu/Debian
-sudo apt update && sudo apt install rustc cargo
-
-# macOS with Homebrew
-brew install rust
-
-# Windows
-# Download rustup-init.exe from https://rust-lang.org
-```
-
-#### Issue: Missing system dependencies
-**Error Message:** `failed to run custom build command` or linking errors
-
-**Solutions:**
-```bash
-# Ubuntu/Debian
-sudo apt install build-essential pkg-config libssl-dev
-
-# CentOS/RHEL
-sudo yum groupinstall "Development Tools"
-sudo yum install openssl-devel
-
-# macOS
-brew install openssl
-export PKG_CONFIG_PATH="/opt/homebrew/opt/openssl@3/lib/pkgconfig"
-
-# Windows (using vcpkg)
-vcpkg install openssl:x64-windows
-```
-
-#### Issue: Compilation failures
-**Error Message:** Various compilation errors
-
-**Solutions:**
-```bash
-# Clean build cache
+# Clean and rebuild
 cargo clean
 cargo build --release
-
-# Update dependencies
-cargo update
-
-# Check specific error
-cargo check --verbose
-
-# Build with specific toolchain
-rustup default stable
-cargo build
 ```
 
-### 2. Runtime Errors
+### Missing system libraries (Linux)
 
-#### Issue: Invalid password error
-**Error Message:** `Invalid password` or `Decryption failed`
+Some systems may need development headers for `sysinfo`:
 
-**Solutions:**
 ```bash
-# Verify password exactly (case-sensitive)
-# Check for typos or extra spaces
-# Ensure same password used for encryption
+# Debian/Ubuntu
+sudo apt install build-essential pkg-config
 
-# Test with a simple password first
-echo "test content" > test.txt
-./file-encryptor encrypt --input test.txt --output test.enc --password "Simple123!"
-./file-encryptor decrypt --input test.enc --output test_decrypted.txt --password "Simple123!"
-
-# If device binding was used, ensure same device
-./file-encryptor fingerprint  # Check current fingerprint
+# Fedora
+sudo dnf install gcc pkg-config
 ```
 
-#### Issue: Device binding validation failed
-**Error Message:** `Device binding failed` or `Device fingerprint mismatch`
+---
 
-**Solutions:**
-```bash
-# Check current device fingerprint
-./file-encryptor fingerprint
+## Encryption Issues
 
-# If you need to decrypt on different device:
-# Option 1: Disable device validation (less secure)
-./file-encryptor decrypt --input file.encrypted --output file.txt --password "password" --no-validate-device
+### "Password rejected: Password too weak"
 
-# Option 2: Recreate the same fingerprint (advanced)
-# This requires identical hardware configuration
+Password must meet all requirements:
+- 12+ characters
+- 2+ uppercase letters
+- 2+ lowercase letters
+- 2+ digits
+- 1+ special character (`!@#$%^&*` etc.)
+- No common patterns (password, qwerty, 123456, etc.)
+
+### "File too large: X bytes (max: Y bytes)"
+
+Default max file size is 2 GiB. Increase in `encryptor.toml`:
+
+```toml
+[encryption]
+max_file_size = 4294967296  # 4 GiB
 ```
 
-#### Issue: Signature verification failed
-**Error Message:** `Signature verification failed` or `Integrity check failed`
+### "Input file not found"
 
-**Solutions:**
-```bash
-# Verify you're using the correct public key
-./file-encryptor verify --file original.txt --public-key correct_key.json --signature file.sig
+Check the file path exists and is accessible. Use absolute paths if relative paths fail.
 
-# Check if file was modified after signing
-# Recreate signature if file changed
-./file-encryptor sign --file original.txt --private-key key.json
+### Encrypted file is larger than original
 
-# Verify file integrity manually
-sha256sum original.txt  # Compare with stored hash
+Expected for small files due to encryption overhead (salt, nonce, tag, header). For larger files, gzip compression usually makes the output smaller. If the input is already compressed (`.zip`, `.jpg`, `.mp4`), disable compression:
+
+```toml
+[encryption]
+compress = false
 ```
 
-#### Issue: File format errors
-**Error Message:** `Invalid file format` or `Corrupted file`
+---
 
-**Solutions:**
+## Decryption Issues
+
+### "Decryption failed" / "aead::Error"
+
+- Wrong password (most common)
+- File was encrypted with device binding but `--validate-device` uses different device
+- File is corrupted
+
+### "Rate limit exceeded"
+
+Too many failed decryption attempts. Wait 60 seconds and try again.
+
+### "Invalid file format"
+
+- File was not encrypted by this tool
+- File was truncated or corrupted during transfer
+- Trying to use `decrypt` on a file encrypted with `encrypt_and_sign` (use `-k` flag with public key)
+
+### "Unsupported format version: X"
+
+The file was created with a newer version of the tool. Update to the latest version:
+
 ```bash
-# Verify file is not corrupted
-file file.encrypted  # Should show it's a data file
-
-# Check file size
-ls -la file.encrypted  # Should not be 0 bytes
-
-# Try with a fresh file
-echo "test data" > fresh.txt
-./file-encryptor encrypt --input fresh.txt --output fresh.enc --password "test123"
-./file-encryptor decrypt --input fresh.enc --output fresh_decrypted.txt --password "test123"
-```
-
-### 3. Performance Issues
-
-#### Issue: Slow encryption/decryption
-**Problem:** Large files taking too long to process
-
-**Solutions:**
-```bash
-# Check system resources
-free -h  # Memory usage
-df -h    # Disk space
-top      # CPU usage
-
-# For large files, consider:
-# 1. Using release build instead of debug
+git pull
 cargo build --release
-
-# 2. Processing in chunks
-split -b 100M largefile.zip part_
-for part in part_*; do
-    ./file-encryptor encrypt --input "$part" --output "${part}.enc" --password "pass"
-done
-
-# 3. Using faster storage
-# Move files to SSD if currently on HDD
 ```
 
-#### Issue: High memory usage
-**Problem:** Application consuming excessive RAM
+---
 
-**Solutions:**
+## Signature Issues
+
+### "Integrity check failed"
+
+The file has been modified after encryption/signing. Re-encrypt from the original.
+
+### "Signature verification FAILED"
+
+- Wrong public key
+- File was modified after signing
+- Signature file (`.sig`) is corrupted or mismatched
+
+### "Key file is encrypted -- passphrase required"
+
+The private key was saved with `--passphrase`. Add `--passphrase "your_passphrase"` to the command:
+
 ```bash
-# Monitor memory usage
-ps aux | grep file-encryptor
-
-# Process smaller batches
-# Use the chunking approach shown above
-
-# Check for memory leaks
-valgrind --tool=memcheck ./file-encryptor encrypt --input file.txt --output file.enc --password "test"
-
-# Use system monitoring
-htop  # Real-time process monitoring
+file-encryptor sign -f file.txt -k key_private.json --passphrase "YourPassphrase"
 ```
 
-### 4. Key Management Issues
+---
 
-#### Issue: Lost private key
-**Problem:** Cannot decrypt files without private key
+## Device Binding Issues
 
-**Solutions:**
+### "Device binding validation failed"
+
+The file was encrypted on a different machine. Device fingerprint is based on: CPU vendor, hostname, total memory, CPU count, MAC addresses.
+
+Causes:
+- Different physical machine
+- Hostname changed
+- Network adapter changed (MAC address shift)
+- Significant hardware change (RAM upgrade/downgrade)
+
+Recovery: decrypt on the original machine, or re-encrypt without `--bind-device`.
+
+### Fingerprint changes after hardware modification
+
+This is by design. If you upgraded RAM or changed network adapters, the fingerprint will differ. Get the new fingerprint:
+
 ```bash
-# Prevention is key - always backup keys
-# Create secure backups:
-mkdir -p /secure/key-backups
-cp *.json /secure/key-backups/
-chmod 600 /secure/key-backups/*.json
-
-# For enterprise environments:
-# Use hardware security modules (HSM)
-# Implement key escrow procedures
-# Maintain key recovery documentation
-
-# If key is truly lost:
-# Unfortunately, files cannot be recovered without the private key
-# This is by design for security
+file-encryptor fingerprint
 ```
 
-#### Issue: Key file corruption
-**Error Message:** `Invalid key format` or `Key loading failed`
+---
 
-**Solutions:**
+## Configuration Issues
+
+### Config file not loading
+
+Search order:
+1. `./encryptor.toml` (current directory)
+2. `~/.config/file-encryptor/config.toml` (home directory)
+
+If neither exists, defaults are used. Generate a config:
+
 ```bash
-# Verify key file integrity
-file key_private.json  # Should be JSON
-cat key_private.json   # Should be valid JSON
-
-# Check file permissions
-ls -la key_private.json
-chmod 600 key_private.json  # Private keys should be read-only
-
-# Recreate key if backup available
-cp /backup/key_private.json ./
-
-# If no backup, generate new key pair
-# Note: This won't help decrypt existing files
-./file-encryptor generate-keys --name new-key
+file-encryptor init-config
 ```
 
-### 5. Platform-Specific Issues
+### Invalid TOML syntax
 
-#### Windows Issues:
-```powershell
-# Path issues
-# Use forward slashes or escape backslashes
-./file-encryptor encrypt --input "C:/path/to/file.txt" --output "C:/output/file.enc" --password "pass"
-
-# Permission issues
-# Run as administrator if needed
-Start-Process PowerShell -Verb RunAs
-
-# Antivirus interference
-# Add exception for file-encryptor executable
-# Temporarily disable real-time scanning for testing
-```
-
-#### macOS Issues:
 ```bash
-# Gatekeeper restrictions
-# Allow app execution:
-sudo xattr -rd com.apple.quarantine /path/to/file-encryptor
-
-# Permission dialogs
-# Grant accessibility permissions in System Preferences
-# Security & Privacy → Privacy → Files and Folders
-
-# Homebrew path issues
-export PATH="/opt/homebrew/bin:$PATH"
+# Validate your config
+cat encryptor.toml
 ```
 
-#### Linux Issues:
+Common mistakes:
+- Missing quotes around string values
+- Wrong data types (e.g., `true` not `"true"`)
+- Missing section headers (`[argon2]`, `[encryption]`, `[audit]`)
+
+---
+
+## Directory Encryption Issues
+
+### "Input is not a directory"
+
+Use `encrypt-dir` for directories and `encrypt` for files.
+
+### Empty output after `decrypt-dir`
+
+The tar archive inside may be corrupted. Try decrypting to a file first:
+
 ```bash
-# Library path issues
-export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-
-# SELinux/AppArmor restrictions
-# Check audit logs
-sudo ausearch -m avc -ts recent
-
-# File system permissions
-# Ensure proper ownership
-sudo chown $USER:$USER /path/to/files
+file-encryptor decrypt -i folder.enc -o folder.tar
 ```
 
-## Diagnostic Commands
+Then manually inspect the tar.
 
-### System Information Collection:
+---
+
+## Shell Completion Issues
+
+### Completions not working after install
+
+Make sure the completion file is in the right location and your shell is configured to load it:
+
+**Bash:**
 ```bash
-# Create diagnostic report
-echo "=== File Encryptor Diagnostic Report ===" > diagnostic.txt
-date >> diagnostic.txt
-echo "" >> diagnostic.txt
-
-echo "System Information:" >> diagnostic.txt
-uname -a >> diagnostic.txt
-echo "" >> diagnostic.txt
-
-echo "Rust Version:" >> diagnostic.txt
-rustc --version >> diagnostic.txt
-cargo --version >> diagnostic.txt
-echo "" >> diagnostic.txt
-
-echo "File Encryptor Version:" >> diagnostic.txt
-./file-encryptor --version 2>/dev/null || echo "Version command not available" >> diagnostic.txt
-echo "" >> diagnostic.txt
-
-echo "Device Fingerprint:" >> diagnostic.txt
-./file-encryptor fingerprint 2>/dev/null || echo "Fingerprint command failed" >> diagnostic.txt
-echo "" >> diagnostic.txt
-
-echo "Test Encryption:" >> diagnostic.txt
-echo "test data" > test_input.txt
-./file-encryptor encrypt --input test_input.txt --output test_output.enc --password "Diagnostic123!" 2>&1 >> diagnostic.txt
-echo "" >> diagnostic.txt
-
-echo "Test Decryption:" >> diagnostic.txt
-./file-encryptor decrypt --input test_output.enc --output test_decrypted.txt --password "Diagnostic123!" 2>&1 >> diagnostic.txt
-echo "" >> diagnostic.txt
-
-cat diagnostic.txt
+source ~/.local/share/bash-completion/completions/file-encryptor
 ```
 
-### Verbose Debugging:
+**Zsh:** Add to `~/.zshrc`:
 ```bash
-# Enable debug logging
-export RUST_LOG=debug
-./file-encryptor encrypt --input file.txt --output file.enc --password "test" --verbose
-
-# Run with backtrace
-export RUST_BACKTRACE=1
-./file-encryptor encrypt --input file.txt --output file.enc --password "test"
-
-# Memory profiling
-valgrind --tool=massif ./file-encryptor encrypt --input file.txt --output file.enc --password "test"
-ms_print massif.out.*
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
 ```
 
-## Recovery Procedures
+---
 
-### 1. File Recovery Process:
-```bash
-# Step 1: Verify the encrypted file
-file encrypted_file.enc
-ls -la encrypted_file.enc
+## Audit Log Issues
 
-# Step 2: Check if it's a valid JSON format
-head -n 5 encrypted_file.enc
+### Log file not created
 
-# Step 3: Test with known good password
-./file-encryptor decrypt --input encrypted_file.enc --output test_output.txt --password "known_password"
-
-# Step 4: If device binding was used, verify fingerprint
-./file-encryptor fingerprint
+Check `encryptor.toml`:
+```toml
+[audit]
+enabled = true
+log_file = "encryptor_audit.log"
 ```
 
-### 2. Key Recovery Process:
-```bash
-# Check standard backup locations
-find / -name "*.json" -path "*/keys/*" 2>/dev/null
+Ensure the directory is writable. Use an absolute path if needed.
 
-# Search for key files
-locate *_private.json
-locate *_public.json
+---
 
-# Check common backup directories
-ls -la ~/backup/
-ls -la /etc/file-encryptor/
-ls -la ~/.config/file-encryptor/
+## Performance Issues
 
-# Verify key file integrity
-for key in *.json; do
-    echo "Checking $key:"
-    jq . "$key" >/dev/null 2>&1 && echo "  ✓ Valid JSON" || echo "  ✗ Invalid JSON"
-done
+### Encryption is slow
+
+Argon2id key derivation is intentionally slow (security feature). To speed up at the cost of security:
+
+```toml
+[argon2]
+m_cost = 8192    # Less memory (8 MiB)
+t_cost = 1       # Fewer iterations
 ```
 
-### 3. System Recovery:
-```bash
-# Reinstall the application
-cargo clean
-git pull  # if using version control
-cargo build --release
+### High memory usage on large files
 
-# Restore configuration
-cp /backup/.file-encryptor-config ~/.config/file-encryptor/
+Files above the streaming threshold (default 100 MiB) use chunked reads. Lower the threshold:
 
-# Verify functionality
-./file-encryptor --help
-./file-encryptor generate-keys --name test-recovery
-echo "test" | ./file-encryptor encrypt --input - --output test.enc --password "recovery123"
+```toml
+[encryption]
+stream_threshold = 52428800  # 50 MiB
+stream_chunk_size = 33554432 # 32 MiB chunks
 ```
 
-## Prevention Best Practices
+---
 
-### 1. Regular Maintenance:
-```bash
-# Weekly checks
-# Verify key file integrity
-jq . *.json >/dev/null
+## Getting Help
 
-# Test encryption/decryption with sample files
-./test_encryption.sh
-
-# Update dependencies
-cargo update
-cargo audit
-```
-
-### 2. Backup Procedures:
-```bash
-# Automated backup script
-#!/bin/bash
-BACKUP_DIR="/secure/backups/$(date +%Y%m%d)"
-mkdir -p "$BACKUP_DIR"
-
-# Backup keys
-cp *.json "$BACKUP_DIR/"
-chmod 600 "$BACKUP_DIR"/*.json
-
-# Backup important encrypted files
-cp important_files/*.enc "$BACKUP_DIR/"
-
-# Create backup verification
-sha256sum "$BACKUP_DIR"/* > "$BACKUP_DIR/checksums.txt"
-
-# Encrypt backup
-./file-encryptor encrypt --input "$BACKUP_DIR" --output "${BACKUP_DIR}.backup.enc" --password "BackupPassword123!"
-```
-
-### 3. Monitoring Setup:
-```bash
-# Create monitoring script
-#!/bin/bash
-# monitor_encryption.sh
-
-LOG_FILE="/var/log/file-encryptor/monitor.log"
-ALERT_EMAIL="admin@company.com"
-
-# Check for failed operations
-if grep -q "ERROR\|FAILED" "$LOG_FILE"; then
-    # Send alert
-    echo "File Encryptor errors detected" | mail -s "Security Alert" "$ALERT_EMAIL"
-fi
-
-# Check disk space
-if [ $(df / | awk 'NR==2 {print $5}' | sed 's/%//') -gt 90 ]; then
-    echo "Low disk space warning" | mail -s "System Alert" "$ALERT_EMAIL"
-fi
-```
-
-## Support Information
-
-### When to Seek Help:
-- After trying all troubleshooting steps above
-- For security-related concerns
-- Enterprise deployment issues
-- Custom integration problems
-
-### Information to Provide:
-```bash
-# System information
-uname -a
-rustc --version
-./file-encryptor --version
-
-# Error details
-# Exact error message
-# Steps to reproduce
-# Sample files (if possible)
-
-# Diagnostic output
-./diagnostic_script.sh > diagnostic_output.txt
-```
-
-This troubleshooting guide covers the most common issues users encounter with the File Encryptor system and provides systematic approaches to diagnosis and resolution.
+1. Check this guide for your specific error message
+2. Run with `--help` for command-specific usage
+3. Check [GitHub Issues](https://github.com/RasyaAndrean/Universal-Encryption-System/issues)
+4. Review [SECURITY.md](../SECURITY.md) for cryptographic details

@@ -1,274 +1,179 @@
 # Security Documentation
 
-## Security Model Overview
-
-The File Encryptor implements a comprehensive security model with multiple layers of protection designed to defend against various attack vectors while maintaining usability.
-
 ## Threat Model
 
-### Protected Assets:
-- **File Contents**: Original data being encrypted
-- **Encryption Keys**: Derived keys and key pairs
-- **Metadata**: File information and device fingerprints
-- **Signatures**: Cryptographic proof of authenticity
+### Protected Against
+- Unauthorized file access (AES-256-GCM encryption)
+- Password brute-force (Argon2id with configurable cost)
+- File tampering (GCM authentication tag + SHA-256 hash)
+- Signature forgery (Ed25519 digital signatures)
+- Cross-device access (deterministic hardware binding)
+- Memory forensics (zeroize on drop)
+- Weak passwords (strength validation with 30+ pattern blocklist)
+- Rapid brute-force (rate limiting, 3 attempts per 60 seconds)
 
-### Assumptions:
-- **Threat Actor**: Sophisticated attacker with computational resources
-- **Attack Surface**: Encrypted files, key storage, system memory
-- **Trust Boundary**: Local system and file storage locations
+### Not Protected Against
+- Compromised system (keylogger, memory dump on live system)
+- Physical access to unlocked machine with decrypted files
+- Quantum computing attacks (future concern for all classical crypto)
+- Side-channel attacks on the host system
 
-### Security Objectives:
-- Confidentiality: Only authorized users can access file contents
-- Integrity: Detect any modification to encrypted files
-- Authenticity: Verify the origin and integrity of files
-- Non-repudiation: Provide cryptographic proof of file origin
+## Cryptographic Primitives
 
-## Cryptographic Implementation
+### Key Derivation: Argon2id
 
-### 1. Key Derivation (Argon2id)
-**Algorithm**: Argon2id (hybrid of Argon2i and Argon2d)
-**Parameters**:
-- Memory Cost: 19,456 KiB (19 MiB)
-- Time Cost: 2 iterations
-- Parallelism: 1 thread
-- Output Length: 256 bits (32 bytes)
+- **Algorithm:** Argon2id (hybrid of Argon2i and Argon2d)
+- **Version:** 1.3 (0x13)
+- **Default parameters:**
+  - Memory: 19,456 KiB (19 MiB)
+  - Iterations: 2
+  - Parallelism: 1
+  - Output: 32 bytes (256 bits)
+- **Salt:** 16 bytes, randomly generated per encryption
+- **Configurable:** via `encryptor.toml` `[argon2]` section
 
-**Security Properties**:
-- Resistance to GPU/ASIC attacks
-- Memory-hard computation
-- Protection against rainbow table attacks
-- Salted to prevent precomputation
+Password and device ID are combined using length-prefixed format (`len:password:device_id`) to prevent input collision.
 
-### 2. Encryption (AES-256-GCM)
-**Algorithm**: Advanced Encryption Standard with Galois/Counter Mode
-**Key Size**: 256 bits
-**Mode**: GCM (Galois/Counter Mode)
-**Nonce Size**: 96 bits (12 bytes)
-**Authentication Tag**: 128 bits (16 bytes)
+### Encryption: AES-256-GCM
 
-**Security Properties**:
-- Authenticated encryption (confidentiality + integrity)
-- Parallelizable encryption/decryption
-- Resistance to chosen-plaintext attacks
-- Nonce misuse resistance
+- **Key size:** 256 bits
+- **Nonce:** 12 bytes (96 bits), randomly generated per encryption
+- **Tag:** 16 bytes (128 bits), appended to ciphertext
+- **Wire format:** `ENCRYPT\0` + version(1) + salt(16) + nonce(12) + ciphertext + tag(16)
 
-### 3. Digital Signatures (Ed25519)
-**Algorithm**: Edwards-curve Digital Signature Algorithm
-**Curve**: Curve25519
-**Key Size**: 256 bits
-**Signature Size**: 512 bits (64 bytes)
+Each encryption produces unique output due to random salt and random nonce.
 
-**Security Properties**:
-- Fast signature generation and verification
-- Small key and signature sizes
-- Resistance to side-channel attacks
-- Deterministic signature generation
+### Digital Signatures: Ed25519
 
-### 4. Hashing (SHA-256)
-**Algorithm**: Secure Hash Algorithm 2
-**Output Size**: 256 bits (32 bytes)
-**Security Properties**:
-- Collision resistance
-- Preimage resistance
-- Second preimage resistance
-- Avalanche effect
+- **Key size:** 256 bits (32 bytes each for public and private)
+- **Signature size:** 64 bytes
+- **Usage:** Signs the encrypted data blob (sign-then-encrypt is not used; we sign the ciphertext)
 
-## Security Features
+### Hashing: SHA-256
 
-### 1. Password Security
-**Requirements**:
-- Minimum 12 characters
-- At least 2 uppercase letters
-- At least 2 lowercase letters
-- At least 2 digits
-- At least 1 special character
-- No common dictionary words or patterns
+- Used for file integrity verification (hash of original uncompressed content)
+- Used in device fingerprinting (hash of hardware attributes)
 
-**Implementation**:
-```rust
-const MIN_PASSWORD_LENGTH: usize = 12;
-const MIN_UPPERCASE: usize = 2;
-const MIN_LOWERCASE: usize = 2;
-const MIN_DIGITS: usize = 2;
-const MIN_SPECIAL_CHARS: usize = 1;
+### Compression: Gzip (flate2)
+
+- Applied before encryption (encrypted data cannot be compressed)
+- Compression is skipped if output is larger than input
+- Default level: 6 (configurable 0-9)
+- No security implications: compression happens on plaintext before encryption
+
+## Password Requirements
+
+Enforced in CLI before encryption:
+
+| Requirement | Value |
+|-------------|-------|
+| Minimum length | 12 characters |
+| Uppercase letters | 2+ |
+| Lowercase letters | 2+ |
+| Digits | 2+ |
+| Special characters | 1+ |
+| Common patterns | 30+ patterns blocked |
+
+Blocked patterns include: password, 123456, qwerty, abc123, admin, welcome, letmein, monkey, dragon, master, login, princess, iloveyou, trustno1, sunshine, shadow, passw0rd, football, baseball, superman, batman, access, hello, charlie, donald, and numeric sequences.
+
+## Device Binding
+
+When `--bind-device` is enabled:
+
+1. A deterministic device fingerprint is computed from:
+   - CPU vendor ID
+   - Hostname
+   - Total physical memory
+   - CPU core count
+   - Sorted MAC addresses (excluding null addresses)
+2. These are hashed with SHA-256 to produce a stable identifier
+3. The fingerprint is mixed into the Argon2id key derivation
+4. The fingerprint is stored in file metadata for validation
+
+The fingerprint is **deterministic** (same on every call) and **stable across reboots**. It will change if hardware is significantly modified (RAM upgrade, hostname change, network adapter swap).
+
+## Rate Limiting
+
+- 3 decryption attempts per 60-second window (CLI-enforced)
+- Per-process limiter (resets on restart)
+- Logged in audit trail on failure
+
+## Encrypted Key Storage
+
+Private keys can be encrypted at rest with a passphrase:
+
+- Key JSON is encrypted with AES-256-GCM using the passphrase
+- Stored in `EncryptedKeyFile` format with `encrypted: true` flag
+- Backward compatible: plain KeyPair JSON files still loadable
+- File permissions set to 0600 on Unix systems
+
+## File Format Security
+
+### Format Version 2
+
+```json
+{
+  "header": {
+    "magic": [83, 69, 67, 85, 82, 69, 0, 0],
+    "version": 2,
+    "metadata": { "original_filename", "file_size", "timestamps", "device_fingerprint" },
+    "data_hash": "<sha256 of original uncompressed content>",
+    "compressed": true
+  },
+  "encrypted_data": "<base64 of AES-256-GCM ciphertext>",
+  "signature": "<base64 of Ed25519 signature>"
+}
 ```
 
-**Protection Against**:
-- Dictionary attacks
-- Brute force attacks
-- Pattern-based attacks
-- Common password lists
+Inner encrypted payload: `4-byte header length (LE) + header JSON + (compressed) content`
 
-### 2. Device Binding
-**Mechanism**: Hardware fingerprint generation
-**Components**:
-- CPU vendor ID
-- Hostname
-- Operating system information
-- Boot time
-- UUID generation
+### Version Migration
 
-**Security Benefits**:
-- Device-specific encryption
-- Prevention of file transfer between devices
-- Hardware-based authentication
-- Tamper detection
+- `SUPPORTED_FORMAT_VERSIONS = [1, 2]`
+- v1 files (no `compressed` field) are handled via `#[serde(default)]`
+- Unsupported versions produce a clear error with the supported list
 
-### 3. Rate Limiting
-**Implementation**: Time-based attempt tracking
-**Configuration**: 3 attempts per 1 second window
-**Protection Against**: Brute force password attacks
+## Audit Trail
 
-### 4. Memory Security
-**Features**:
-- Automatic zeroization of sensitive data
-- Secure string implementation
-- No plaintext key storage in memory
-- Protected temporary file creation
+All operations are logged when `audit.enabled = true`:
 
-### 5. File Integrity
-**Mechanisms**:
-- SHA-256 hash of original content
-- AES-GCM authentication tags
-- Ed25519 digital signatures
-- Metadata validation
+```
+[timestamp] ACTION STATUS target=/path details
+```
 
-## Attack Scenarios and Mitigations
+Log file location is configurable. The audit log provides:
+- Who decrypted what and when
+- Failed decryption attempts (potential attacks)
+- Key generation events
+- Password rotation (re-encrypt) events
 
-### 1. Password-Based Attacks
-**Scenario**: Attacker attempts to guess or crack passwords
-**Mitigations**:
-- Strong password requirements
-- Argon2id key derivation (computationally expensive)
-- Rate limiting (3 attempts per second)
-- Salted key derivation (prevents rainbow tables)
+## Secure Memory
 
-### 2. Device Compromise
-**Scenario**: Attacker gains access to encrypted device
-**Mitigations**:
-- Memory-safe implementation (no buffer overflows)
-- Key zeroization on drop
-- Secure temporary file handling
-- No plaintext key storage
+- All key material uses `zeroize` crate for automatic cleanup on drop
+- `DerivedKey` struct zeroizes the 32-byte key on drop
+- `SecureString` zeroizes password bytes on drop
+- Temporary files created via `tempfile` crate (OS-managed cleanup)
 
-### 3. File Tampering
-**Scenario**: Attacker modifies encrypted files
-**Mitigations**:
-- AES-GCM authentication tags
-- SHA-256 content hashing
-- Ed25519 digital signatures
-- Metadata integrity checking
+## Best Practices
 
-### 4. Man-in-the-Middle
-**Scenario**: Attacker intercepts communication
-**Mitigations**:
-- Local file-based operations (no network transmission)
-- Digital signatures for authenticity
-- Hash verification for integrity
+### For Users
+- Use interactive password prompts (don't pass passwords on command line where shell history may record them)
+- Encrypt private keys with `--passphrase`
+- Enable device binding for highly sensitive files
+- Review audit logs regularly
+- Back up key pairs in a secure, separate location
 
-### 5. Side-Channel Attacks
-**Scenario**: Attacker analyzes timing/power consumption
-**Mitigations**:
-- Constant-time operations where critical
-- Memory-safe Rust implementation
-- Secure random number generation
-- Proper error handling (no information leakage)
-
-## Security Best Practices
-
-### Key Management:
-- Store private keys in secure, access-controlled locations
-- Use different key pairs for different security domains
-- Regular key rotation for high-security applications
-- Backup keys using secure offline storage
-- Never share private keys
-
-### Password Management:
-- Use unique passwords for each file/encryption operation
-- Store passwords in secure password managers
-- Change passwords periodically
-- Never reuse passwords across different systems
-- Consider using passphrases for better security
-
-### Device Security:
-- Keep system software updated
-- Use full-disk encryption for the operating system
-- Implement proper user access controls
-- Regular security audits
-- Monitor for unauthorized access attempts
-
-### File Handling:
-- Verify file integrity after encryption/decryption
-- Test decryption workflows before critical operations
-- Maintain backup copies of important encrypted files
-- Document encryption parameters and procedures
-- Implement proper file access logging
-
-## Compliance Considerations
-
-### Data Protection Regulations:
-- **GDPR**: Personal data encryption requirements
-- **HIPAA**: Healthcare data protection standards
-- **SOX**: Financial data security requirements
-- **PIPEDA**: Canadian privacy legislation
-
-### Industry Standards:
-- **NIST SP 800-63**: Digital identity guidelines
-- **FIPS 140-2**: Cryptographic module validation
-- **ISO 27001**: Information security management
-- **OWASP**: Security best practices
-
-## Security Testing
-
-### Automated Testing:
-- Unit tests for all cryptographic functions
-- Integration tests for complete workflows
-- Fuzz testing for input validation
-- Performance benchmarking
-- Memory leak detection
-
-### Manual Testing:
-- Penetration testing
-- Security code reviews
-- Threat modeling exercises
-- Compliance verification
-- Incident response testing
-
-### Vulnerability Management:
-- Regular dependency updates
-- Security advisory monitoring
-- Patch management procedures
-- Vulnerability disclosure process
-- Security incident response plan
+### For Deployment
+- Set restrictive file permissions on encrypted files and keys
+- Use a dedicated service account for automated encryption
+- Monitor audit logs for unusual patterns
+- Rotate passwords periodically using `re-encrypt`
+- Store `encryptor.toml` with appropriate permissions (may contain security-relevant settings)
 
 ## Known Limitations
 
-### Technical Limitations:
-- Password strength depends on user compliance
-- Device binding may break with hardware changes
-- Large file processing may consume significant resources
-- Key recovery requires original password and device
-
-### Security Trade-offs:
-- Stronger security often means slower performance
-- Usability vs security balance considerations
-- Convenience features may reduce security
-- Backward compatibility vs security improvements
-
-## Future Security Enhancements
-
-### Planned Improvements:
-- Hardware security module (HSM) integration
-- Multi-factor authentication support
-- Key escrow mechanisms
-- Advanced threat detection
-- Quantum-resistant cryptography preparation
-
-### Research Areas:
-- Homomorphic encryption capabilities
-- Secure multi-party computation
-- Blockchain-based key management
-- AI-powered threat detection
-- Post-quantum cryptographic algorithms
-
-This security documentation provides a comprehensive overview of the protection mechanisms implemented in the File Encryptor system and guidelines for secure usage.
+1. **Not constant-memory for non-streaming**: Files below the streaming threshold are loaded fully into RAM
+2. **Per-process rate limiting**: Rate limiter resets when the process restarts
+3. **No key revocation**: No built-in mechanism to revoke compromised keys
+4. **Single-recipient**: Each file is encrypted with one password; no multi-recipient support
+5. **GCM nonce size**: 12-byte random nonce limits safe encryption count to ~2^32 per key (not an issue with random salt per encryption)

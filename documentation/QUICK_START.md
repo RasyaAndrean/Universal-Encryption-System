@@ -1,134 +1,120 @@
 # Quick Start Guide
 
-## Getting Started in 5 Minutes
+Get up and running with File Encryptor in 5 minutes.
 
-### Step 1: Generate Your Keys
-```bash
-./file-encryptor generate-keys
-```
-This creates `key_private.json` and `key_public.json` in your current directory.
+## Prerequisites
 
-### Step 2: Check Your Device Fingerprint
-```bash
-./file-encryptor fingerprint
-```
-Save this fingerprint for reference.
+- Rust 1.70+ installed ([rustup.rs](https://rustup.rs/))
 
-### Step 3: Create a Test File
+## Install
+
 ```bash
-echo "This is my secret document" > secret.txt
+git clone https://github.com/RasyaAndrean/Universal-Encryption-System.git
+cd Universal-Encryption-System
+cargo build --release
 ```
 
-### Step 4: Encrypt with Maximum Security
+The binary is at `target/release/file-encryptor`.
+
+## 1. Encrypt a File
+
 ```bash
-./file-encryptor encrypt \
-  --input secret.txt \
-  --output secret.encrypted \
-  --password "MyV3ryStr0ngP@ssw0rd!" \
-  --bind-device \
-  --private-key key_private.json
+# Interactive password prompt (recommended)
+file-encryptor encrypt -i secret.txt -o secret.enc
+
+# Or pass password directly
+file-encryptor encrypt -i secret.txt -o secret.enc -p "MyStr0ngP@ss123!"
 ```
 
-### Step 5: Verify Encryption Worked
-```bash
-./file-encryptor decrypt \
-  --input secret.encrypted \
-  --output secret_decrypted.txt \
-  --password "MyV3ryStr0ngP@ssw0rd!" \
-  --validate-device \
-  --public-key key_public.json
+Password requirements: 12+ chars, 2 uppercase, 2 lowercase, 2 digits, 1 special character.
 
-cat secret_decrypted.txt
+## 2. Decrypt a File
+
+```bash
+file-encryptor decrypt -i secret.enc -o secret.txt
+```
+
+## 3. Encrypt a Directory
+
+```bash
+file-encryptor encrypt-dir -i ./my-folder -o folder.enc
+file-encryptor decrypt-dir -i folder.enc -o ./restored-folder
+```
+
+## 4. Generate Signing Keys
+
+```bash
+# With encrypted private key (recommended)
+file-encryptor generate-keys -o ./keys -n mykey --passphrase "KeySecret!"
+
+# Plaintext private key
+file-encryptor generate-keys -o ./keys -n mykey
+```
+
+## 5. Encrypt + Sign
+
+```bash
+file-encryptor encrypt -i secret.txt -o secret.enc -k keys/mykey_private.json
+file-encryptor decrypt -i secret.enc -o secret.txt -k keys/mykey_public.json
+```
+
+## 6. Device Binding
+
+Tie encrypted files to the current machine:
+
+```bash
+file-encryptor encrypt -i secret.txt -o secret.enc --bind-device
+file-encryptor decrypt -i secret.enc -o secret.txt --validate-device
+```
+
+## 7. Change Password
+
+```bash
+file-encryptor re-encrypt -i secret.enc -o secret_new.enc
+```
+
+## 8. Configuration
+
+```bash
+file-encryptor init-config
+# Edit encryptor.toml to adjust Argon2 params, compression, file limits, audit logging
+```
+
+## 9. Shell Completions
+
+```bash
+file-encryptor completions bash > ~/.local/share/bash-completion/completions/file-encryptor
+file-encryptor completions zsh > ~/.zfunc/_file-encryptor
+file-encryptor completions fish > ~/.config/fish/completions/file-encryptor.fish
+file-encryptor completions powershell > file-encryptor.ps1
 ```
 
 ## Common Use Cases
 
-### 🔒 Personal File Encryption
-```bash
-# Encrypt personal documents
-./file-encryptor encrypt --input finances.xlsx --output finances.enc --password "MySecurePassword123!"
-
-# Decrypt when needed
-./file-encryptor decrypt --input finances.enc --output finances.xlsx --password "MySecurePassword123!"
-```
-
-### 🏢 Business Document Protection
-```bash
-# Generate company key pair
-./file-encryptor generate-keys --name company
-
-# Encrypt sensitive business files
-./file-encryptor encrypt \
-  --input confidential_report.pdf \
-  --output confidential_report.enc \
-  --password "CompanySecret2023!" \
-  --private-key company_private.json
-
-# Verify authenticity
-./file-encryptor verify \
-  --file confidential_report.pdf \
-  --public-key company_public.json \
-  --signature confidential_report.pdf.sig
-```
-
-### 💾 Device-Specific Encryption
-```bash
-# Encrypt files that only work on your laptop
-./file-encryptor encrypt \
-  --input personal_notes.txt \
-  --output personal_notes.enc \
-  --password "MyDeviceOnlyPass123!" \
-  --bind-device
-
-# This file won't decrypt on other devices!
-```
-
-### 📱 Mobile Backup Security
-```bash
-# Create encrypted backup
-./file-encryptor encrypt \
-  --input backup.zip \
-  --output backup.enc \
-  --password "BackupPass2023!" \
-  --private-key backup_key.json
-
-# Store encrypted backup safely
-# Only you can decrypt it with your password and key
-```
+| Scenario | Command |
+|----------|---------|
+| Personal file encryption | `encrypt -i file -o file.enc` |
+| Business with signatures | `encrypt -i file -o file.enc -k private.json` |
+| Device-locked encryption | `encrypt -i file -o file.enc --bind-device` |
+| Directory backup | `encrypt-dir -i ./folder -o backup.enc` |
+| Password rotation | `re-encrypt -i old.enc -o new.enc` |
 
 ## Security Checklist
 
-Before using in production:
-
-- [ ] Generated strong key pairs
-- [ ] Tested encryption/decryption workflow
-- [ ] Verified device fingerprint consistency
-- [ ] Backed up private keys securely
-- [ ] Tested password recovery process
-- [ ] Understood device binding implications
-- [ ] Validated signature verification works
+- Use strong passwords (12+ chars, mixed types)
+- Store private keys securely (use `--passphrase` to encrypt them)
+- Enable device binding for sensitive files
+- Keep `encryptor_audit.log` for operation history
+- Back up key pairs in a secure location
 
 ## Troubleshooting Quick Reference
 
 | Problem | Solution |
 |---------|----------|
-| "Invalid password" | Double-check password exactly, including case |
-| "Device binding failed" | File encrypted on different device |
-| "Signature verification failed" | File was modified or wrong public key |
-| "Rate limit exceeded" | Wait 1 minute and try again |
-| "File integrity check failed" | File was corrupted or tampered with |
+| "Password rejected" | Password doesn't meet strength requirements |
+| "Rate limit exceeded" | Too many decrypt attempts, wait 60 seconds |
+| "File not found" | Check input file path exists |
+| "Device binding failed" | File was encrypted on a different machine |
+| "Integrity check failed" | File was tampered with or wrong key |
 
-## Next Steps
-
-1. **Read the full documentation** in README.md
-2. **Run the test suite**: `cargo test`
-3. **Experiment with different security levels**
-4. **Set up key backup procedures**
-5. **Test cross-device scenarios**
-
-## Need Help?
-
-- Check the detailed README.md
-- Run `./file-encryptor --help` for command reference
-- Review the examples in the documentation
-- Run integration tests to verify setup
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.

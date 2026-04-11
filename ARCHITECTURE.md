@@ -1,205 +1,151 @@
 # System Architecture
 
 ## Overview
-The File Encryptor system is built with a modular architecture focusing on security, performance, and usability. The system implements multiple layers of protection using industry-standard cryptographic algorithms.
 
-## High-Level Architecture
+File Encryptor is a synchronous Rust application providing file encryption, digital signatures, device binding, compression, and audit logging.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    CLI Application Layer                    │
-│  (Command parsing, user interaction, argument validation)   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                   Core Security Modules                     │
-├─────────────────────────────────────────────────────────────┤
-│  • Crypto Module     │  • Signature Module  │  • Format     │
-│  (Encryption/Decryption)│(Digital Signatures)│(File Format) │
-├─────────────────────────────────────────────────────────────┤
-│  • Hardware Module   │  • Security Module   │               │
-│  (Device Binding)    │  (Validation/Ratelimit)              │
-└─────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                    Cryptographic Libraries                  │
-│  Argon2 │ AES-GCM │ Ed25519 │ SHA-256 │ SysInfo │ Zeroize   │
-└─────────────────────────────────────────────────────────────┘
+CLI (clap)
+  |
+  +-- Config (encryptor.toml)
+  +-- Audit Logger
+  |
+  +-- Encrypt/Decrypt
+  |     +-- File Size Check
+  |     +-- Compression (flate2 gzip)
+  |     +-- Streaming (chunked reads for large files)
+  |     +-- Key Derivation (Argon2id)
+  |     +-- AES-256-GCM Encrypt/Decrypt
+  |
+  +-- Sign/Verify (Ed25519)
+  |     +-- Encrypted Key Storage
+  |
+  +-- Format v2 (JSON structure)
+  |     +-- Header + Metadata + Hash
+  |     +-- Compression flag
+  |     +-- Backward compat with v1
+  |
+  +-- Hardware (Device Fingerprint)
+  |     +-- Deterministic SHA-256
+  |
+  +-- Security
+        +-- Password Validation
+        +-- Rate Limiting
+        +-- Secure Memory (zeroize)
 ```
 
 ## Module Breakdown
 
-### 1. Crypto Module (`src/crypto/`)
-**Responsibilities:**
-- Key derivation using Argon2id
-- AES-256-GCM encryption/decryption
-- Secure password handling
-- File I/O operations
+### `cli` (src/cli/mod.rs)
+- Parses CLI arguments via `clap` with subcommands
+- Interactive password prompts with confirmation (`rpassword`)
+- Progress spinners (`indicatif`)
+- Input validation (file exists, directory check)
+- Rate limiting on decrypt attempts
+- Shell completion generation (`clap_complete`)
+- Delegates to crypto/format/signature modules
 
-**Components:**
-- `key_derivation.rs`: Password-based key generation
-- `encryption.rs`: Core encryption/decryption logic
-- `mod.rs`: Module interface and error handling
+### `crypto` (src/crypto/)
+- **mod.rs**: High-level file encryption with compression and streaming
+  - `encrypt_file` / `decrypt_file`: default config
+  - `encrypt_file_with_config` / `decrypt_file_with_config`: explicit config
+  - Gzip compression (skipped if output is larger than input)
+  - Streaming mode for files above threshold (default 100 MiB)
+  - File size limit enforcement
+- **encryption.rs**: Core AES-256-GCM operations
+  - Wire format: magic bytes + version + salt + nonce + ciphertext + tag
+  - Random nonce per encryption (12 bytes)
+  - Random salt per key derivation (16 bytes)
+- **key_derivation.rs**: Argon2id key derivation
+  - Configurable parameters (m_cost, t_cost, p_cost)
+  - Length-prefixed password+device_id to prevent collisions
+  - Shared helper functions (deduplicated)
 
-**Security Features:**
-- Memory-safe key handling with automatic zeroization
-- Salted key derivation to prevent rainbow table attacks
-- Authenticated encryption with GCM mode
+### `signature` (src/signature/mod.rs)
+- Ed25519 key pair generation, signing, verification
+- Encrypted private key storage (AES-256-GCM with passphrase)
+- Backward compatible loading (detects encrypted vs plaintext format)
+- File permissions (0600 on Unix)
 
-### 2. Signature Module (`src/signature/`)
-**Responsibilities:**
-- Ed25519 key pair generation
-- Digital signing of files
-- Signature verification
-- Key storage and retrieval
+### `format` (src/format/mod.rs)
+- Encrypted file format version 2:
+  - Magic bytes (`SECURE\0\0`)
+  - Version field (2, backward compat with 1)
+  - FileMetadata: filename, size, timestamps, device fingerprint
+  - SHA-256 data hash (of original uncompressed content)
+  - Compression flag
+  - Length-prefixed header in encrypted payload
+- `encrypt_and_sign`: compress + encrypt + Ed25519 sign
+- `decrypt_and_verify`: verify signature + decrypt + decompress + verify hash
 
-**Key Features:**
-- Fast elliptic curve cryptography
-- Base64-encoded key storage
-- JSON serialization for keys
-- Separation of public/private key operations
+### `hardware` (src/hardware/mod.rs)
+- Deterministic device fingerprint via SHA-256 of:
+  - CPU vendor ID
+  - Hostname
+  - Total memory
+  - CPU count
+  - Sorted MAC addresses (excluding 00:00:00:00:00:00)
+- Consistent across calls and reboots on the same machine
+- Disk serial hashing from disk attributes
 
-### 3. Hardware Module (`src/hardware/`)
-**Responsibilities:**
-- Device fingerprint generation
-- System information collection
-- Hardware-based encryption binding
-- MAC address and disk identification
+### `security` (src/security.rs)
+- Password strength validation (12+ chars, mixed types, 30+ common pattern blocklist)
+- Rate limiter (configurable max attempts per time window)
+- SecureString with zeroize-on-drop
+- Constant-time comparison
 
-**Components:**
-- `DeviceFingerprint` structure with hardware identifiers
-- System metadata collection
-- Consistent fingerprint generation
+### `config` (src/config.rs)
+- TOML configuration file support
+- Search: `./encryptor.toml` then `~/.config/file-encryptor/config.toml`
+- Sections: argon2, encryption, audit
+- `Config::load_or_default()` with sensible defaults
 
-### 4. Format Module (`src/format/`)
-**Responsibilities:**
-- Encrypted file structure definition
-- Metadata embedding
-- Integrity verification
-- File format versioning
-
-**Structure:**
-```
-{
-  "header": {
-    "magic": "SECURE\0\0",
-    "version": 1,
-    "metadata": {
-      "original_filename": "document.txt",
-      "file_size": 1024,
-      "device_fingerprint": "AMD:DESKTOP-123:Windows 10:1234567890:uuid"
-    },
-    "data_hash": "SHA-256-hash-bytes"
-  },
-  "encrypted_data": "base64-encoded-data",
-  "signature": "base64-encoded-signature"
-}
-```
-
-### 5. Security Module (`src/security.rs`)
-**Responsibilities:**
-- Password strength validation
-- Rate limiting implementation
-- Secure string handling
-- Memory security utilities
-
-**Features:**
-- Configurable password requirements
-- Time-based rate limiting
-- Automatic memory zeroization
-- Secure temporary file handling
+### `audit` (src/audit.rs)
+- File-based audit logging with timestamps
+- Actions: Encrypt, Decrypt, EncryptDir, DecryptDir, Sign, Verify, GenerateKeys, ReEncrypt
+- Configurable via `[audit]` section in config
 
 ## Data Flow
 
-### Encryption Process:
-1. **Input Validation** → CLI validates arguments
-2. **Key Derivation** → Argon2id derives key from password + device ID
-3. **File Processing** → Original file is read and hashed
-4. **Metadata Creation** → File metadata and device fingerprint collected
-5. **Encryption** → AES-256-GCM encrypts data with authentication
-6. **Signing** → Ed25519 signs the encrypted data
-7. **Storage** → JSON structure with encrypted data and signature saved
+### Encryption (encrypt_file)
+```
+Read file -> Check size -> Compress (gzip) -> Prepend flag byte
+  -> Derive key (Argon2id) -> Encrypt (AES-256-GCM)
+  -> Write: magic + version + salt + nonce + ciphertext + tag
+```
 
-### Decryption Process:
-1. **Input Validation** → File format and signature verification
-2. **Key Derivation** → Same process as encryption using provided password
-3. **Decryption** → AES-GCM decryption with authentication verification
-4. **Integrity Check** → SHA-256 hash comparison
-5. **Device Validation** → Hardware fingerprint verification (if enabled)
-6. **Output** → Original file restored
+### Encryption with Signing (encrypt_and_sign)
+```
+Read file -> Create metadata -> Hash original (SHA-256)
+  -> Compress (if beneficial) -> Create header (v2)
+  -> Serialize: 4-byte header length + header JSON + compressed content
+  -> Derive key -> Encrypt (AES-256-GCM)
+  -> Sign encrypted blob (Ed25519)
+  -> Write JSON: { header, base64(encrypted), base64(signature) }
+```
 
-## Security Design Principles
+### Decryption
+```
+Read file -> (If signed: verify Ed25519 signature)
+  -> Extract salt + nonce -> Derive key (Argon2id with same salt)
+  -> Decrypt (AES-256-GCM) -> Check flag byte
+  -> Decompress if needed -> (If signed: verify SHA-256 hash)
+  -> Write output
+```
 
-### 1. Defense in Depth
-Multiple layers of security:
-- Strong password requirements
-- Key derivation with salt
-- Authenticated encryption
-- Digital signatures
-- Hardware binding
-- Anti-tamper verification
+## Design Decisions
 
-### 2. Memory Safety
-- Rust's memory safety guarantees
-- Zeroization of sensitive data
-- No manual memory management
-- Secure temporary file handling
-
-### 3. Cryptographic Best Practices
-- Industry-standard algorithms
-- Proper parameter selection
-- Secure random number generation
-- Constant-time operations where critical
-
-### 4. Error Handling
-- Comprehensive error types
-- No information leakage through errors
-- Graceful failure handling
-- Clear error messages
-
-## Performance Considerations
-
-### Bottlenecks:
-- **Key Derivation**: Argon2id is intentionally slow for security
-- **Encryption**: AES-GCM performance depends on file size
-- **Signing**: Ed25519 is fast but scales with data size
-
-### Optimizations:
-- Parallel processing where possible
-- Efficient memory usage
-- Streaming for large files (future enhancement)
-- Caching of device fingerprints
+- **Synchronous**: No async runtime needed. All operations are file I/O bound, not network bound.
+- **Compression before encryption**: Encrypted data has high entropy and cannot be compressed after.
+- **Length-prefixed headers**: Avoids the broken `file_size + 1000` approximation from v1.
+- **Deterministic fingerprint**: SHA-256 of stable hardware attributes instead of random UUID.
+- **Format versioning**: `SUPPORTED_FORMAT_VERSIONS` array allows adding new versions while keeping old files decodable.
+- **Separate encrypt paths**: `encrypt_file` for simple use, `encrypt_and_sign` for signed+metadata use. Both share the same underlying AES-256-GCM.
 
 ## Future Enhancements
 
-### Planned Features:
-- Streaming encryption for large files
-- Multi-threaded processing
-- Plugin architecture for additional algorithms
-- GUI interface
-- Cloud storage integration
-- Key management service
-
-### Scalability Improvements:
-- Database-backed key storage
-- Distributed processing capabilities
-- Performance monitoring
-- Resource usage optimization
-
-## Dependencies Overview
-
-### Core Cryptographic:
-- `argon2` - Password hashing
-- `aes-gcm` - Authenticated encryption
-- `ed25519-dalek` - Digital signatures
-- `sha2` - Hash functions
-- `zeroize` - Secure memory clearing
-
-### System Integration:
-- `sysinfo` - Hardware information
-- `uuid` - Unique identifiers
-- `clap` - Command-line parsing
-- `serde` - Serialization
-- `tokio` - Async runtime
-
-This architecture provides a solid foundation for a secure, maintainable, and extensible file encryption system.
+- True chunked AEAD (e.g., STREAM construction) for constant-memory encryption of arbitrarily large files
+- Hardware security module (HSM) integration for key storage
+- Multi-recipient encryption (encrypt for multiple public keys)
+- Key escrow and recovery mechanisms
+- WASM build for browser-based encryption
